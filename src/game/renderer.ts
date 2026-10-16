@@ -9,7 +9,7 @@ export class Renderer {
   private haloGrad: CanvasGradient | null = null;
   private lampGrad: CanvasGradient | null = null;
   private ropePts: { x: number; y: number; px: number; py: number }[] = [];
-  private ropeSegs = 14;
+  private ropeSegs = 22;
 
   private mainCanvas: HTMLCanvasElement;
   private mainCtx: CanvasRenderingContext2D;
@@ -1537,7 +1537,7 @@ export class Renderer {
     }
 
     // constraint relaxation: keep segment lengths, let the web sag & spring
-    for (let iter = 0; iter < 6; iter++) {
+    for (let iter = 0; iter < 10; iter++) {
       for (let i = 0; i < N - 1; i++) {
         const a = pts[i];
         const b = pts[i + 1];

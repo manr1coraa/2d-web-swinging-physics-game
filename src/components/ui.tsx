@@ -18,11 +18,11 @@ export function ChunkyButton({
 }) {
   const tones = {
     primary:
-      "bg-[#e8465f] text-white border-[#8f1f33] shadow-[0_4px_0_0_#8f1f33] hover:bg-[#f4576f]",
-    gold: "bg-[#e8b64a] text-[#2e1f00] border-[#8f6a12] shadow-[0_4px_0_0_#8f6a12] hover:bg-[#f0c45f]",
-    dark: "bg-[#1c2340] text-white/90 border-[#0c1024] shadow-[0_4px_0_0_#0c1024] hover:bg-[#232b4c]",
+      "bg-[#e8465f] text-white border-[#8f1f33] shadow-[4px_4px_0_0_#000] hover:bg-[#f4576f]",
+    gold: "bg-[#e8b64a] text-[#2e1f00] border-[#8f6a12] shadow-[4px_4px_0_0_#000] hover:bg-[#f0c45f]",
+    dark: "bg-[#1c2340] text-white/90 border-[#0c1024] shadow-[4px_4px_0_0_#000] hover:bg-[#232b4c]",
     ghost:
-      "bg-white/6 text-white/70 border-white/10 shadow-[0_3px_0_0_rgba(255,255,255,0.06)] hover:bg-white/12 hover:text-white",
+      "bg-white/6 text-white/70 border-white/10 shadow-[3px_3px_0_0_#000] hover:bg-white/12 hover:text-white",
   };
   const sizes = {
     sm: "px-3.5 py-2 text-[11px] gap-1.5",
@@ -33,7 +33,7 @@ export function ChunkyButton({
     <button
       onClick={onClick}
       aria-label={ariaLabel}
-      className={`font-display inline-flex items-center justify-center rounded-xl border-b font-bold uppercase tracking-[0.12em] transition-all duration-100 active:translate-y-[4px] active:shadow-none ${tones[tone]} ${sizes[size]} ${className}`}
+      className={`font-display inline-flex items-center justify-center rounded-none border-2 font-bold uppercase tracking-[0.12em] transition-all duration-100 active:translate-y-[4px] active:shadow-none ${tones[tone]} ${sizes[size]} ${className}`}
     >
       {children}
     </button>
