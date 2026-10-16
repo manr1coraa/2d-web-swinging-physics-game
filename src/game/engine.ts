@@ -841,8 +841,9 @@ export class Game {
       const tx = -ny;
       const ty = nx;
       const vt = p.vx * tx + p.vy * ty;
-      // the line bows forward, in the direction the spider is being pulled
-      const target = clamp(vt * 0.05, -T.swayMax, T.swayMax);
+      // the spider throws the web forward and then flies after it, so the
+      // line trails behind the swing: it bows opposite to the motion
+      const target = clamp(-vt * 0.05, -T.swayMax, T.swayMax);
       const SW = T.swayStiff;
       const sa = SW * SW * (target - p.sway) - 2 * T.swayDamp * SW * p.swayV;
       p.swayV += sa * h;
