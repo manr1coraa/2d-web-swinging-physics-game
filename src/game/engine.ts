@@ -428,7 +428,8 @@ export class Game {
     this.snapFx = { px: p.x, py: p.y, ax: p.ax, ay: p.ay, t: 0.26 };
     p.detach();
     this.sfx.whoosh();
-    this.parts.burst(p.x, p.y, "rgba(235,250,255,1)", 6, 130, 2.4, 0.4, 300);
+    this.parts.burst(p.x, p.y, "rgba(235,250,255,1)", 3, 110, 2.2, 0.35, 220);
+    p.stretchOnRelease();
     if (perfect) {
       this.perfectCombo += 1;
       // the chain earns speed one link at a time, up to a cap
@@ -522,7 +523,8 @@ export class Game {
     p.attach(cand.x, cand.y);
     this.attachTime = this.time;
     this.firstClick = true;
-    this.parts.burst(cand.x, cand.y, "rgba(126,240,255,1)", 9, 150, 2.4, 0.35, 150);
+    this.parts.burst(cand.x, cand.y, "rgba(126,240,255,1)", 4, 120, 2.2, 0.3, 120);
+    this.player.squashOnHook();
     this.parts.ring(cand.x, cand.y, "rgba(126,240,255,0.9)", 3, 0.3);
     this.sfx.thwip();
     this.emit();
@@ -659,6 +661,7 @@ export class Game {
     }
 
     this.updateCamera(dt, p);
+    p.stepSquash(dt);
     this.updateShake(dt);
     this.world.ensure(p.rx + this.vw);
 

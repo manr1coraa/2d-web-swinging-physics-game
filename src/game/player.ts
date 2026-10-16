@@ -25,6 +25,12 @@ export class Player {
   grounded = false;
   trail: { x: number; y: number }[] = [];
 
+  // squash & stretch: a damped spring back to (1, 1)
+  sqx = 1;
+  sqy = 1;
+  private sqvx = 0;
+  private sqvy = 0;
+
   reset(x: number, y: number, vx: number) {
     this.x = x;
     this.y = y;
@@ -35,6 +41,29 @@ export class Player {
     this.trail = [];
     this.syncPrev();
     this.syncRender();
+  }
+
+  /** impulse on hooking: the body squashes flat, then springs back */
+  squashOnHook() {
+    this.sqvx -= 3.2;
+    this.sqvy += 3.6;
+  }
+
+  /** impulse on release: the body stretches along the throw */
+  stretchOnRelease() {
+    this.sqvx += 2.6;
+    this.sqvy -= 3.0;
+  }
+
+  /** advance the squash spring (critically damped around 1) */
+  stepSquash(dt: number) {
+    const h = Math.min(dt, 1 / 30);
+    const k = 260;
+    const c = 2 * Math.sqrt(k);
+    this.sqvx += (-k * (this.sqx - 1) - c * this.sqvx) * h;
+    this.sqvy += (-k * (this.sqy - 1) - c * this.sqvy) * h;
+    this.sqx += this.sqvx * h;
+    this.sqy += this.sqvy * h;
   }
 
   /** remember the state before a physics step */

@@ -898,6 +898,7 @@ export class Renderer {
 
     ctx.save();
     ctx.translate(p.rx, p.ry);
+    ctx.scale(p.sqx, p.sqy);
     ctx.rotate(ang);
     ctx.lineCap = "round";
 
