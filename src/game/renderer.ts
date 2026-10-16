@@ -82,7 +82,7 @@ export class Renderer {
       seen.push({ y: oy - g.cam.y, d: dx });
     });
     if (seen.length === 0) return;
-    const pulse = 0.45 + 0.35 * Math.sin(g.time * 8);
+    const pulse = 0.4 + 0.25 * Math.sin(g.time * 5);
     for (const s of seen.slice(0, 3)) {
       const y = clamp(s.y, 56, g.vh - 56);
       const x = g.vw - 30;
@@ -1124,7 +1124,7 @@ export class Renderer {
         ctx.beginPath();
         ctx.arc(o.x, o.y + 14, o.w * 0.85, 0, Math.PI * 2);
         ctx.fill();
-        if (Math.random() < 0.2) {
+        if (Math.random() < 0.1) {
           g.parts.spawn({
             x: o.x + (Math.random() - 0.5) * o.w,
             y: o.y + 8,
@@ -1467,7 +1467,10 @@ export class Renderer {
     const ex = p.x + (p.ax - p.x) * ease;
     const ey = p.y + (p.ay - p.y) * ease;
     const curLen = Math.hypot(p.ax - p.x, p.ay - p.y);
-    const sag = Math.max(0, p.rope - curLen) * 0.55 * ease + (1 - ease) * 3;
+    // a real web stretches and sags: more speed -> more droop, and the
+    // line never goes perfectly straight even under load.
+    const stretch = clamp(p.speed() / 1050, 0, 1) * 14;
+    const sag = Math.max(4, (p.rope - curLen) * 0.55 * ease + (1 - ease) * 4) + stretch * ease;
     const mx = (p.x + ex) / 2;
     const my = (p.y + ey) / 2 + sag;
     const path = () => {
@@ -1585,8 +1588,9 @@ export class Renderer {
     ctx.restore();
 
     ctx.save();
+    const flip = g.flipT > 0 ? (1 - g.flipT / 0.6) * Math.PI * 2 : 0;
     ctx.translate(p.x, p.y);
-    ctx.rotate(ang);
+    ctx.rotate(ang + flip);
     ctx.lineCap = "round";
 
     // web-wings while gliding — membranes between arm and leg
@@ -1743,8 +1747,8 @@ export class Renderer {
     const { ctx } = this;
     const p = g.player;
     const sp = p.speed();
-    if (sp < 620 || g.state !== "playing") return;
-    const n = Math.min(9, Math.floor((sp - 620) / 90) + 1);
+    if (sp < 700 || g.state !== "playing") return;
+    const n = Math.min(6, Math.floor((sp - 700) / 120) + 1);
     const ux = p.vx / sp;
     const uy = p.vy / sp;
     const sx = p.x - g.cam.x + g.cam.sx;
@@ -1832,7 +1836,7 @@ export class Renderer {
     const w = g.vw;
     const h = g.vh;
     const rise = T.ambient === "bubbles" || T.ambient === "embers" || T.ambient === "sparks";
-    const n = T.ambient === "snow" ? 46 : 32;
+    const n = T.ambient === "snow" ? 24 : 16;
     for (let i = 0; i < n; i++) {
       const r1 = hash(i * 4.13);
       const r2 = hash(i * 8.77 + 2.1);

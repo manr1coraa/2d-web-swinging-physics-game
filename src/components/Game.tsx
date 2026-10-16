@@ -252,11 +252,7 @@ export default function GameScreen() {
                 <Wind size={12} /> gliding
               </div>
             )}
-            {snap.graceT > 0 && snap.graceT < 3 && (
-              <div className="font-display flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#12172c]/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/45">
-                <Sparkles size={12} /> safe {Math.ceil(snap.graceT)}s
-              </div>
-            )}
+
           </div>
 
           {/* hazard warning — a soft edge glow, nothing more */}
