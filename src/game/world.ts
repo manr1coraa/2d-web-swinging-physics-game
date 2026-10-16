@@ -111,12 +111,20 @@ export class World {
     return lerp(this.pts[i], this.pts[i + 1], t);
   }
 
+  /** how deep the sinkhole is at this x (0 outside a pit) */
+  pitDepthAt(x: number): number {
+    const dip = Math.sin(x * 0.0009) * 0.5 + 0.5;
+    return dip > 0.74 ? (dip - 0.74) * 420 : 0;
+  }
+
   lavaY(x: number): number {
     const open = clamp(1 - x / 9000, 0, 1);
-    // deeper dips every ~6000px so the street reads as having pits
-    const dip = Math.sin(x * 0.0009) * 0.5 + 0.5;
-    const pitDepth = dip > 0.74 ? (dip - 0.74) * 420 : 0;
-    return this.lavaBase + 190 * open + noise1(x * 0.0016 + 40.7) * 84 + pitDepth;
+    return (
+      this.lavaBase +
+      190 * open +
+      noise1(x * 0.0016 + 40.7) * 84 +
+      this.pitDepthAt(x)
+    );
   }
 
   diffAt(x: number): number {
@@ -424,10 +432,18 @@ export class World {
       objs.push({ kind: "portal", x: gateHere, y: this.lavaY(gateHere), r: 78, used: false });
     }
 
-    // ---- dips (visual markers) ----
-    if (r(90) < 0.4) {
-      const dx = x0 + 80 + r(91) * (this.cw - 160);
-      objs.push({ kind: "dip", x: dx, y: this.lavaY(dx), w: 90 + r(92) * 80, depth: 20 + r(93) * 40 });
+    // ---- sinkhole marker, only where the street really caves in ----
+    let pitX = -1;
+    let pitD = 0;
+    for (let s = 0; s <= this.cw; s += 24) {
+      const pd = this.pitDepthAt(x0 + s);
+      if (pd > pitD) {
+        pitD = pd;
+        pitX = x0 + s;
+      }
+    }
+    if (pitX >= 0 && pitD > 26) {
+      objs.push({ kind: "dip", x: pitX, y: this.lavaY(pitX), w: 110 + pitD * 1.8, depth: pitD });
     }
 
     return { i, x0, x1, gapA, gapB, isGap, objs };
