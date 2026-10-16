@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Play,
   RotateCcw,
@@ -16,8 +16,22 @@ import {
   Sparkles,
   Info,
   Wind,
+  Lock,
+  Flag,
+  Map,
+  Waves,
+  Trees,
+  Snowflake,
+  Flame,
+  Rocket,
+  Building2,
+  Sun,
+  Droplets,
+  ChevronRight,
 } from "lucide-react";
-import { Game, type Snap } from "../game/engine";
+import { Game, LEVEL_METERS, MAX_LEVELS, type Snap } from "../game/engine";
+import { themeForLevel, type ThemeId } from "../game/world";
+import { THEME_DEFS } from "../game/themes";
 import { ChunkyButton, RoundButton, Panel, Sticker } from "./ui";
 import HowToPlay from "./HowToPlay";
 import AnnounceOverlay from "./Announce";
@@ -27,10 +41,16 @@ const causeText: Record<string, string> = {
   spike: "clipped a construction girder",
   saw: "swatted by a patrol drone",
   spire: "flew straight into a tower",
+  fire: "roasted on a burning rooftop",
+  fish: "kissed a very big fish",
+  drone: "shot down by a hunter drone",
 };
 
 const initialSnap: Snap = {
   state: "menu",
+  level: 0,
+  unlocked: 0,
+  theme: "city",
   dist: 0,
   coins: 0,
   best: 0,
@@ -46,7 +66,73 @@ const initialSnap: Snap = {
   gliding: false,
   announce: null,
   lowAlt: 0,
+  windGain: 0,
+  gateM: LEVEL_METERS,
+  segStart: 0,
+  missed: false,
 };
+
+const THEME_ICON: Record<ThemeId, typeof Wind> = {
+  city: Building2,
+  jungle: Trees,
+  underwater: Waves,
+  desert: Sun,
+  ice: Snowflake,
+  volcano: Flame,
+  space: Rocket,
+  neon: Droplets,
+};
+
+/** one tile in the world picker */
+function LevelTile({
+  index,
+  unlocked,
+  selected,
+  onPick,
+}: {
+  index: number;
+  unlocked: boolean;
+  selected: boolean;
+  onPick: () => void;
+}) {
+  const tid = themeForLevel(index);
+  const th = THEME_DEFS[tid];
+  const Icon = THEME_ICON[tid];
+  return (
+    <button
+      onClick={onPick}
+      disabled={!unlocked}
+      className={`relative flex flex-col items-start gap-0.5 overflow-hidden rounded-2xl border-b-[3px] px-2.5 py-2 text-left transition-all duration-100 ${
+        unlocked
+          ? selected
+            ? "border-black/50 ring-2 ring-white/80"
+            : "border-black/40 hover:brightness-125"
+          : "cursor-not-allowed border-black/50 opacity-45"
+      }`}
+      style={{
+        background: `linear-gradient(160deg, ${th.sky[1]}, ${th.sky[3]})`,
+      }}
+      title={unlocked ? `${th.name} — start here` : "Locked — clear the level before it"}
+    >
+      <div className="flex w-full items-center justify-between">
+        <span className="font-display text-[15px] font-extrabold leading-none text-white drop-shadow">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        {unlocked ? (
+          <Icon size={13} style={{ color: th.trim }} />
+        ) : (
+          <Lock size={12} className="text-white/70" />
+        )}
+      </div>
+      <span
+        className="font-display truncate text-[8.5px] font-bold uppercase tracking-[0.08em]"
+        style={{ color: th.trim }}
+      >
+        {th.name}
+      </span>
+    </button>
+  );
+}
 
 export default function GameScreen() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -54,6 +140,7 @@ export default function GameScreen() {
   const [snap, setSnap] = useState<Snap>(initialSnap);
   const [mouseIdle, setMouseIdle] = useState(false);
   const [help, setHelp] = useState(false);
+  const [pick, setPick] = useState<number | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -104,11 +191,34 @@ export default function GameScreen() {
 
   const playing = snap.state === "playing" || snap.state === "dying";
   const hideCursor = snap.state === "playing" && mouseIdle && !help;
+  const theme = THEME_DEFS[snap.theme];
+  const selected = pick ?? snap.unlocked;
+  const selTheme = THEME_DEFS[themeForLevel(selected)];
+
+  const levelTiles = useMemo(
+    () =>
+      Array.from({ length: MAX_LEVELS }, (_, i) => (
+        <LevelTile
+          key={i}
+          index={i}
+          unlocked={i <= snap.unlocked}
+          selected={i === selected}
+          onPick={() => setPick(i)}
+        />
+      )),
+    [snap.unlocked, selected],
+  );
 
   const openHelp = () => {
     gameRef.current?.pause();
     setHelp(true);
   };
+
+  const gateM = Math.max(snap.gateM, snap.segStart + 1);
+  const progress = Math.min(
+    1,
+    Math.max(0, (snap.dist - snap.segStart) / (gateM - snap.segStart)),
+  );
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#070b22]">
@@ -125,10 +235,42 @@ export default function GameScreen() {
       {/* ============ HUD ============ */}
       {playing && !help && (
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute inset-x-0 top-3 flex justify-center sm:top-5">
-            <div className="font-display text-7xl font-extrabold leading-none text-white [text-shadow:0_4px_0_rgba(8,10,30,0.5),0_14px_38px_rgba(0,0,0,0.5)] sm:text-8xl">
+          <div className="absolute inset-x-0 top-2 flex flex-col items-center sm:top-3">
+            <div
+              className="font-display anim-pop-in mb-1 flex items-center gap-1.5 rounded-full border-b-2 border-black/45 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#06293a]"
+              style={{ background: theme.trim, borderColor: "rgba(0,0,0,0.35)" }}
+            >
+              {(() => {
+                const Icon = THEME_ICON[snap.theme];
+                return <Icon size={12} />;
+              })()}
+              level {snap.level + 1} · {theme.name}
+            </div>
+
+            <div className="font-display text-6xl font-extrabold leading-none text-white [text-shadow:0_4px_0_rgba(8,10,30,0.5),0_14px_38px_rgba(0,0,0,0.5)] sm:text-7xl">
               {snap.dist}
-              <span className="ml-1.5 text-2xl font-bold text-white/40">m</span>
+              <span className="ml-1.5 text-xl font-bold text-white/40">
+                /{gateM}m
+              </span>
+            </div>
+
+            {/* progress to the floor gate */}
+            {snap.missed && (
+              <div className="font-display anim-pop-in mt-1 rounded-full bg-[#ff2d55]/90 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.16em] text-white">
+                gate missed · next one at {gateM} m
+              </div>
+            )}
+            <div className="mt-1.5 flex w-[220px] items-center gap-2 sm:w-[280px]">
+              <div className="relative h-2.5 flex-1 overflow-hidden rounded-full border border-black/40 bg-black/45">
+                <div
+                  className="h-full rounded-full transition-[width] duration-150"
+                  style={{
+                    width: `${progress * 100}%`,
+                    background: `linear-gradient(90deg, ${theme.trim}, #ffe79a)`,
+                  }}
+                />
+              </div>
+              <Flag size={13} className="shrink-0 text-[#ffe79a]" />
             </div>
           </div>
 
@@ -149,6 +291,11 @@ export default function GameScreen() {
               <Coins size={15} />
               {snap.coins}
             </div>
+            {snap.windGain > 0.12 && (
+              <div className="font-display anim-pop-in flex items-center gap-1.5 rounded-2xl border-b-2 border-[#1a93bd] bg-[#bff2ff]/95 px-3 py-1.5 text-xs font-extrabold uppercase tracking-wider text-[#06293a]">
+                <Wind size={13} /> air current
+              </div>
+            )}
             {snap.gliding && (
               <div className="font-display anim-pop-in flex items-center gap-1.5 rounded-2xl border-b-2 border-[#1a93bd] bg-[#49d8ff]/90 px-3 py-1.5 text-xs font-extrabold uppercase tracking-wider text-[#06293a]">
                 <Wind size={13} /> gliding
@@ -265,37 +412,60 @@ export default function GameScreen() {
         </div>
       )}
 
-      {/* ============ MENU ============ */}
+      {/* ============ MENU / WORLD PICKER ============ */}
       {snap.state === "menu" && !help && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center">
           <div className="anim-pop-in">
-            <Sticker tone="cyan">one button · endless city</Sticker>
+            <Sticker tone="cyan">one button · {MAX_LEVELS} worlds</Sticker>
           </div>
 
-          <h1 className="anim-pop-in-d1 mt-4 -rotate-2 font-display text-[82px] font-extrabold leading-[0.86] tracking-tight text-white [text-shadow:0_6px_0_#1a2048,0_10px_0_rgba(6,10,30,0.45),0_28px_60px_rgba(0,0,0,0.6)] sm:text-[120px]">
+          <h1 className="anim-pop-in-d1 mt-3 -rotate-2 font-display text-[62px] font-extrabold leading-[0.86] tracking-tight text-white [text-shadow:0_6px_0_#1a2048,0_10px_0_rgba(6,10,30,0.45),0_28px_60px_rgba(0,0,0,0.6)] sm:text-[92px]">
             WEBBY<span className="text-[#ff5172]">!</span>
           </h1>
 
-          <p className="anim-pop-in-d1 mt-5 max-w-xs text-sm font-bold leading-relaxed text-white/50">
-            Swing the Manhattan skyline. Hold to shoot a web, release to fly,
-            never touch the street.
+          <p className="anim-pop-in-d1 mt-3 max-w-sm text-[13px] font-bold leading-relaxed text-white/50">
+            Swing 250 m, then dive through the hole in the street. Every gate
+            drops you into a new world — and your progress is saved.
           </p>
 
-          <div className="anim-pop-in-d2 relative mt-9">
-            <span className="anim-ring pointer-events-none absolute -inset-3 rounded-full border-2 border-[#ff5172]" />
+          <Panel className="anim-pop-in-d1 mt-4 w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <Map size={14} className="text-white/50" />
+                <span className="font-display text-[11px] font-extrabold uppercase tracking-[0.2em] text-white/55">
+                  pick a world
+                </span>
+              </div>
+              <span className="font-display text-[10px] font-extrabold uppercase tracking-[0.14em] text-white/35">
+                {snap.unlocked + 1}/{MAX_LEVELS} open
+              </span>
+            </div>
+            <div className="grid max-h-[38vh] grid-cols-4 gap-1.5 overflow-y-auto p-3 sm:grid-cols-6">
+              {levelTiles}
+            </div>
+          </Panel>
+
+          <div className="anim-pop-in-d2 mt-4 flex flex-col items-center gap-1.5">
             <button
-              onClick={() => gameRef.current?.start()}
+              onClick={() => gameRef.current?.start(selected)}
               aria-label="Play"
-              className="relative flex h-[86px] w-[86px] items-center justify-center rounded-full border-b-[6px] border-[#b81f42] bg-[#ff5172] text-white shadow-[0_14px_40px_-6px_rgba(255,81,114,0.7)] transition-all duration-100 hover:bg-[#ff6682] active:translate-y-[6px] active:border-b-0 active:shadow-none"
+              className="font-display flex items-center gap-3 rounded-[26px] border-b-[6px] border-[#b81f42] bg-[#ff5172] px-8 py-4 text-lg font-extrabold uppercase tracking-[0.12em] text-white shadow-[0_14px_40px_-6px_rgba(255,81,114,0.7)] transition-all duration-100 hover:bg-[#ff6682] active:translate-y-[6px] active:border-b-0 active:shadow-none"
+              style={{
+                background: `linear-gradient(180deg, ${selTheme.trim}, #ff5172)`,
+                borderColor: "rgba(0,0,0,0.4)",
+              }}
             >
-              <Play className="ml-1 h-9 w-9 fill-current" />
+              <Play className="h-6 w-6 fill-current" />
+              play level {selected + 1}
             </button>
-          </div>
-          <div className="anim-pulse-soft font-display mt-5 text-[11px] font-extrabold uppercase tracking-[0.3em] text-white/40">
-            tap to start
+            <span className="font-display flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.22em] text-white/40">
+              {selTheme.name}
+              <ChevronRight size={11} />
+              {selTheme.tag}
+            </span>
           </div>
 
-          <div className="anim-pop-in-d2 mt-8 flex items-center gap-2.5">
+          <div className="anim-pop-in-d2 mt-4 flex items-center gap-2.5">
             <ChunkyButton tone="dark" size="sm" onClick={() => setHelp(true)}>
               <HelpCircle size={14} />
               How to play
@@ -310,7 +480,7 @@ export default function GameScreen() {
           </div>
 
           {snap.best > 0 && (
-            <div className="anim-pop-in-d2 absolute bottom-7">
+            <div className="anim-pop-in-d2 absolute bottom-5">
               <Sticker tone="gold" className="rotate-[-3deg]">
                 <Trophy size={12} /> best {snap.best} m
               </Sticker>
@@ -323,11 +493,9 @@ export default function GameScreen() {
       {snap.state === "paused" && !help && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#05040f]/55 px-6 backdrop-blur-md">
           <Panel className="anim-pop-in w-full max-w-xs p-6 text-center">
-            <h2 className="font-display text-4xl font-extrabold text-white">
-              PAUSED
-            </h2>
+            <h2 className="font-display text-4xl font-extrabold text-white">PAUSED</h2>
             <p className="mt-1.5 text-xs font-bold text-white/40">
-              {snap.dist} m · {snap.coins} coins
+              level {snap.level + 1} · {snap.dist}/{LEVEL_METERS} m · {snap.coins} coins
             </p>
             <div className="mt-6 flex flex-col gap-2.5">
               <ChunkyButton tone="primary" size="md" onClick={() => gameRef.current?.resume()}>
@@ -353,6 +521,39 @@ export default function GameScreen() {
         </div>
       )}
 
+      {/* ============ LEVEL CLEAR ============ */}
+      {snap.state === "levelup" && !help && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
+          <div className="flex w-full max-w-sm flex-col items-center text-center">
+            <div className="anim-pop-in anim-badge">
+              <Sticker tone="gold" className="rotate-[-2deg]">
+                <Flag size={12} /> gate cleared
+              </Sticker>
+            </div>
+            <h2 className="anim-pop-in mt-3 rotate-1 font-display text-6xl font-extrabold leading-none text-[#ffe79a] [text-shadow:0_6px_0_rgba(70,40,0,0.6),0_18px_50px_rgba(255,208,110,0.4)] sm:text-7xl">
+              LEVEL {snap.level + 1}!
+            </h2>
+            <Panel className="anim-pop-in-d1 mt-4 w-full px-5 py-4">
+              <div className="font-display text-2xl font-extrabold text-white">
+                {LEVEL_METERS} m · {snap.coins} coins
+              </div>
+              <div className="mt-1 text-[11px] font-bold uppercase tracking-[0.18em] text-white/45">
+                diving into
+              </div>
+              <div className="font-display mt-1 text-3xl font-extrabold" style={{ color: THEME_DEFS[themeForLevel(snap.level + 1)].trim }}>
+                {THEME_DEFS[themeForLevel(snap.level + 1)].name}
+              </div>
+              <div className="mt-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/35">
+                {THEME_DEFS[themeForLevel(snap.level + 1)].tag}
+              </div>
+            </Panel>
+            <p className="anim-pulse-soft font-display mt-4 text-[11px] font-extrabold uppercase tracking-[0.28em] text-white/50">
+              progress saved
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ============ DEATH ============ */}
       {snap.state === "dead" && !help && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#05040f]/45 px-6 backdrop-blur-[2px]">
@@ -373,9 +574,14 @@ export default function GameScreen() {
             )}
 
             <Panel className="anim-pop-in-d1 mt-5 w-full px-5 py-5">
-              <div className="font-display text-7xl font-extrabold leading-none text-white">
+              <div className="font-display text-6xl font-extrabold leading-none text-white">
                 {snap.dist}
-                <span className="ml-1 text-xl font-bold text-white/35">m</span>
+                <span className="ml-1 text-xl font-bold text-white/35">
+                  /{LEVEL_METERS} m
+                </span>
+              </div>
+              <div className="font-display mt-2 text-[10px] font-extrabold uppercase tracking-[0.2em] text-white/35">
+                level {snap.level + 1} · {theme.name}
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2 border-t border-white/10 pt-4">
                 <div>
@@ -383,27 +589,21 @@ export default function GameScreen() {
                   <div className="font-display mt-1 text-lg font-extrabold text-white">
                     {snap.best}
                   </div>
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-white/35">
-                    best
-                  </div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-white/35">best</div>
                 </div>
                 <div>
                   <Coins size={14} className="mx-auto text-[#ffc53d]" />
                   <div className="font-display mt-1 text-lg font-extrabold text-white">
                     {snap.coins}
                   </div>
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-white/35">
-                    coins
-                  </div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-white/35">coins</div>
                 </div>
                 <div>
                   <Gauge size={14} className="mx-auto text-[#49d8ff]" />
                   <div className="font-display mt-1 text-lg font-extrabold text-white">
                     {Math.round(snap.maxSpeed / 10)}
                   </div>
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-white/35">
-                    km/h
-                  </div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-white/35">km/h</div>
                 </div>
               </div>
             </Panel>

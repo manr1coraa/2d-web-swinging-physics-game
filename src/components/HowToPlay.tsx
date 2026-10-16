@@ -69,6 +69,57 @@ const Scaffold = () => (
   </svg>
 );
 
+const WindZone = () => (
+  <svg viewBox="0 0 40 40" className="h-9 w-9">
+    <rect x="3" y="7" width="34" height="26" rx="11" fill="#bff2ff" opacity=".12" />
+    <rect x="3" y="7" width="34" height="26" rx="11" fill="none" stroke="#8fe6ff" strokeWidth="1.4" strokeDasharray="4 5" opacity=".7" />
+    <path d="M9 16h14a4 4 0 100-4" stroke="#dff6ff" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+    <path d="M9 21h20a4 4 0 110 4" stroke="#dff6ff" strokeWidth="2.2" fill="none" strokeLinecap="round" opacity=".8" />
+    <path d="M9 26h11" stroke="#dff6ff" strokeWidth="2.2" fill="none" strokeLinecap="round" opacity=".6" />
+  </svg>
+);
+
+const FireRoof = () => (
+  <svg viewBox="0 0 40 40" className="h-9 w-9">
+    <rect x="2" y="24" width="36" height="14" rx="2" fill="#1b0d12" />
+    <path d="M2 24h36" stroke="#ffb066" strokeWidth="2" />
+    <path d="M12 24c0-6 3-9 3-13 3 4 6 6 6 13z" fill="#ff8a3d" opacity=".9" />
+    <path d="M22 24c0-5 2.4-7.5 2.4-11 2.6 3.4 5 5 5 11z" fill="#ff8a3d" opacity=".7" />
+    <path d="M14 24c0-3.4 1.6-5 1.6-7 1.8 2.2 3.4 3.4 3.4 7z" fill="#ffe07a" />
+  </svg>
+);
+
+const Fish = () => (
+  <svg viewBox="0 0 40 40" className="h-9 w-9">
+    <circle cx="20" cy="20" r="15" stroke="#ff7d8f" strokeWidth="1.4" strokeDasharray="4 5" fill="none" opacity=".7" />
+    <path d="M9 20l-5-5v10z" fill="#ff7d4d" />
+    <ellipse cx="20" cy="20" rx="11" ry="7.5" fill="#ffb347" stroke="#5a1e0a" strokeOpacity=".5" strokeWidth="1.4" />
+    <path d="M16 13.5v13M21 13v14" stroke="#fff" strokeWidth="1.8" opacity=".75" />
+    <circle cx="26.4" cy="18" r="2.4" fill="#fff" />
+    <circle cx="26.7" cy="18" r="1.2" fill="#20161a" />
+  </svg>
+);
+
+const Pod = () => (
+  <svg viewBox="0 0 40 40" className="h-9 w-9">
+    <ellipse cx="20" cy="12" rx="11" ry="8.5" fill="#131a3d" stroke="#49d8ff" strokeWidth="1.8" />
+    <ellipse cx="16" cy="9.5" rx="3.6" ry="2.6" fill="#49d8ff" opacity=".45" />
+    <path d="M13 20l-3 6M27 20l3 6" stroke="#c8e6ff" strokeOpacity=".55" strokeWidth="1.8" />
+    <rect x="5" y="26" width="30" height="9" rx="4" fill="#1b2450" stroke="#96c8ff" strokeOpacity=".6" strokeWidth="1.5" />
+    <path d="M9 27.4h22" stroke="#49d8ff" strokeWidth="2.2" />
+  </svg>
+);
+
+const Gate = () => (
+  <svg viewBox="0 0 40 40" className="h-9 w-9">
+    <rect x="1" y="20" width="38" height="18" rx="2" fill="#241a33" />
+    <path d="M1 20h14M25 20h14" stroke="#ffd09a" strokeWidth="2.4" />
+    <ellipse cx="20" cy="21" rx="11" ry="4.6" fill="#04030c" stroke="#ffe79a" strokeWidth="2" />
+    <path d="M20 12v6M16 14.5L20 18.5l4-4" stroke="#ffe79a" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M8 34h6M26 34h6" stroke="#ffe79a" strokeWidth="2" strokeLinecap="round" opacity=".6" />
+  </svg>
+);
+
 const Coin = () => (
   <svg viewBox="0 0 40 40" className="h-9 w-9">
     <circle cx="20" cy="20" r="14" fill="#ffd23f" opacity=".16" />
@@ -115,6 +166,8 @@ const HAZARDS: Row[] = [
   { icon: <Tower />, name: "Skyscraper", desc: "Towers from street level. Web over the roof.", tone: "danger" },
   { icon: <Girder />, name: "Girder", desc: "Striped steel beams hanging from above.", tone: "danger" },
   { icon: <Drone />, name: "Patrol drone", desc: "Hovering rotors. Give the red eye space.", tone: "danger" },
+  { icon: <FireRoof />, name: "Burning roof", desc: "Flames along a ledge. Never web through them.", tone: "danger" },
+  { icon: <Fish />, name: "Reef fish", desc: "Trench dwellers that drift sideways. Swim clear.", tone: "danger" },
 ];
 
 const GOODIES: Row[] = [
@@ -124,6 +177,9 @@ const GOODIES: Row[] = [
   { icon: <Ring />, name: "Boost ring", desc: "A burst of speed — aim for long gaps.", tone: "good" },
   { icon: <ShieldIcon />, name: "Shield", desc: "Absorbs one fatal hit and bounces you up.", tone: "good" },
   { icon: <MagnetIcon />, name: "Magnet", desc: "Vacuums nearby coins for 9 seconds.", tone: "good" },
+  { icon: <WindZone />, name: "Air current", desc: "Ride the arrows: they fling you forward and up.", tone: "good" },
+  { icon: <Pod />, name: "Web pod", desc: "A floating anchor when the next roof is too far.", tone: "good" },
+  { icon: <Gate />, name: "Level gate", desc: "At 250 m, dive into the hole in the street.", tone: "good" },
 ];
 
 function LegendRow({ r }: { r: Row }) {
@@ -231,6 +287,25 @@ export default function HowToPlay({
                 for a <b className="text-[#49d8ff]">PERFECT</b> combo.
               </p>
             </div>
+          </div>
+
+          {/* goal of a level */}
+          <div className="mt-4 rounded-2xl border border-[#ffc53d]/25 bg-[#ffc53d]/8 p-4">
+            <div className="font-display text-[11px] font-extrabold uppercase tracking-[0.25em] text-[#ffc53d]">
+              Goal of every level
+            </div>
+            <p className="mt-2 text-xs font-semibold leading-snug text-white/60">
+              Ride out <b className="text-white/90">250 m</b>, then dive through
+              the <b className="text-[#ffe79a]">glowing hole</b> in the street.
+              The gate drops you into the next world — jungle, trench, desert,
+              glacier, volcano, orbit or neon — and your progress is stored
+              automatically. Hit the avenue instead and that is a splat, so line
+              the dive up early: the beacon and the bouncing chevrons mark the way.
+            </p>
+            <p className="mt-2 text-xs font-semibold leading-snug text-white/60">
+              Back in the menu you can <b className="text-white/90">pick any
+              unlocked world</b> and replay it from the start.
+            </p>
           </div>
 
           {/* legend */}
