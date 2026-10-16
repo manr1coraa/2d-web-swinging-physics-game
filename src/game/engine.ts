@@ -4,6 +4,7 @@ import { Particles } from "./particles";
 import { Sfx } from "./audio";
 import { Renderer } from "./renderer";
 import { clamp, lerp, dist, noise1 } from "./util";
+import { live as T } from "./tuning";
 
 export type GameState = "menu" | "playing" | "dying" | "dead" | "paused";
 
@@ -20,7 +21,7 @@ export interface Snap {
   shield: boolean;
   magnetT: number;
   tip: Tip | null;
-  graceT: number;
+  glideFuel: number;
   gliding: boolean;
   announce: Announce | null;
   lowAlt: number; // 0..1 — how close to the street you are
@@ -38,13 +39,13 @@ export const TIPS: Record<string, Tip> = {
   swing: {
     id: "swing",
     title: "Hold to swing",
-    text: "Hold SPACE or press anywhere — the web picks a ledge by itself. Let go to fly.",
+    text: "Hold to hook a ledge. Let go near the bottom of the swing for a perfect release.",
     tone: "info",
   },
   glide: {
     id: "glide",
     title: "Glide mode",
-    text: "Hold GLIDE (or SHIFT) to spread web-wings. Fast glides climb, and updrafts above the street always carry you back up.",
+    text: "Double tap, and hold on the second tap, to glide. Glide fuel runs out.",
     tone: "good",
   },
   street: {
@@ -52,12 +53,6 @@ export const TIPS: Record<string, Tip> = {
     title: "Mind the street",
     text: "Hitting the avenue ends the run. Keep your arc above the traffic.",
     tone: "danger",
-  },
-  pump: {
-    id: "pump",
-    title: "You pump the web",
-    text: "While attached you actively work the line — the longer you hold, the more speed you build.",
-    tone: "good",
   },
   stal: {
     id: "stal",
@@ -127,24 +122,11 @@ export interface Popup {
   max: number;
 }
 
-const G = 1930; // gravity px/s^2 — lighter, floatier arcs
-const FWD = 175; // forward push — ramps up with distance
-const FWD_ATT = 95; // gentle constant swing nudge
-const MAXV = 1300;
-const ROPE_MAX = 440; // must exceed the corridor height or low flight is a dead end
-const PUMP = 700; // tangential self-pump — keeps the swing alive
-const REEL = 90; // rope reel speed while pumping
-const GLIDE_G = 0.28; // gravity multiplier while gliding
-const GLIDE_VY = 215; // sink rate when gliding slowly
-const GLIDE_CLIMB = -110; // fast glides actually gain altitude
-const GLIDE_FWD = 190; // forward drift from the web-wings
-const UPDRAFT_H = 330; // height above the street where thermals kick in
-const UPDRAFT_VY = -330; // how hard the updraft lifts you clear
-const GRACE = 3.2; // seconds of invulnerability at the start of a run
-const METER = 50; // px per meter
 const MAGNET_TIME = 9;
+const MAX_SLICE = 0.25; // never simulate more than this much real time at once
 
 const BEST_KEY = "pauchok_best";
+const KEY_OWNER = -2; // press id used for the keyboard
 const TAUGHT_KEY = "webby_taught";
 
 export class Game {
@@ -165,7 +147,6 @@ export class Game {
   cam = { x: -200, y: 0, sx: 0, sy: 0 };
   trauma = 0;
 
-  pointer = { id: -1 };
   firstClick = false;
   texts: Popup[] = [];
 
@@ -175,10 +156,14 @@ export class Game {
   snapFx: { px: number; py: number; ax: number; ay: number; t: number } | null =
     null;
   attachTime = -10;
-  pumpFx = 0;
   gliding = false;
-  glideHold = false; // explicit glide input (button / key)
-  graceT = 0;
+  glideHold = false; // second tap of a double tap is held
+  glideFuel = 0;
+  private glideOwner = -1; // which press (pointer id / KEY_OWNER) is gliding
+  private holdOwner = -1; // which press is currently holding the web
+  private lastPressAt = -10; // when the previous press started (real seconds)
+  private acc = 0; // fixed-step accumulator
+  private slowT = 0; // real seconds of release slow motion left
   lowAlt = 0;
   announce: Announce | null = null;
   private announceT = 0;
@@ -200,6 +185,7 @@ export class Game {
   private coinChainT = 0;
   private dyingT = 0;
   private deadAt = -10;
+  /** chain of perfect releases; a bad release resets it */
 
   // power-ups
   shieldActive = false;
@@ -246,7 +232,7 @@ export class Game {
     this.world.ensure(0);
     this.parts.list = [];
     this.texts = [];
-    this.player.reset(this.startX, this.world.ceilY(this.startX) + 225);
+    this.player.reset(this.startX, this.world.ceilY(this.startX) + 225, T.startVx);
     this.runT = 0;
     this.distM = 0;
     this.coins = 0;
@@ -266,24 +252,25 @@ export class Game {
     this.snapFx = null;
     this.autoRetryT = 0;
     this.attachTime = -10;
-    this.pumpFx = 0;
     this.gliding = false;
     this.glideHold = false;
+    this.glideFuel = T.glideFuel;
+    this.glideOwner = -1;
+    this.holdOwner = -1;
+    this.acc = 0;
+    this.slowT = 0;
     this.announce = null;
     this.announceT = 0;
-    this.graceT = GRACE;
     this.tip = null;
     this.tipT = 0;
     this.tipScanT = 0;
-    this.cam.x = this.player.x - this.vw * 0.4;
-    this.cam.y = this.player.y - this.vh * 0.52;
+    this.player.syncRender();
+    this.cam.x = this.player.rx - this.vw * 0.4;
+    this.cam.y = this.player.ry - this.vh * 0.52;
     this.state = "playing";
     this.sfx.ensure();
     this.sfx.start();
     this.sfx.padStart();
-    // onboarding: first swing is free — shows what to do
-    const ax = this.player.x + 135;
-    this.player.attach(ax, this.world.ceilY(ax) + 2);
     this.emit();
   }
 
@@ -314,23 +301,6 @@ export class Game {
 
   toggleMute() {
     this.sfx.setMuted(!this.sfx.muted);
-    this.emit();
-  }
-
-  /** explicit glide input — held from a button or a key */
-  setGlide(on: boolean) {
-    if (this.glideHold === on) return;
-    this.glideHold = on;
-    if (on && this.state === "playing") {
-      if (this.player.attached) this.release(false);
-      this.showAnnounce({
-        id: "glide" + Math.floor(this.time * 10),
-        kind: "glide",
-        title: "GLIDE MODE",
-        sub: "web-wings deployed",
-      });
-      this.sfx.magnetUp();
-    }
     this.emit();
   }
 
@@ -379,18 +349,54 @@ export class Game {
       return;
     }
     if (this.state !== "playing") return;
-    this.pointer.id = e.pointerId;
-    this.holdWeb = true;
-    this.autoRetryT = 0;
-    this.tryAutoAttach();
+    this.pressStart(e.pointerId);
   };
 
   private onPointerUp = (e: PointerEvent) => {
-    if (this.pointer.id !== -1 && e.pointerId !== this.pointer.id) return;
-    this.pointer.id = -1;
-    this.holdWeb = false;
-    this.release(false);
+    this.pressEnd(e.pointerId);
   };
+
+  /**
+   * One press (finger, mouse button or Space). A single press holds the web.
+   * A second press within doubleTapS of the first one glides instead and
+   * never fires the web. Glide lasts while that second press is held.
+   */
+  private pressStart(owner: number) {
+    if (this.state !== "playing") return;
+    // real time, not game time: a slow frame must not turn two taps into one
+    const now = performance.now() / 1000;
+    const isDouble = now - this.lastPressAt < T.doubleTapS;
+    this.lastPressAt = now;
+    if (isDouble) {
+      this.lastPressAt = -10; // a third quick tap starts over
+      this.release(false);
+      this.holdWeb = false;
+      this.holdOwner = -1;
+      this.glideOwner = owner;
+      this.glideHold = true;
+      this.parts.ring(this.player.x, this.player.y, "rgba(235,250,255,0.8)", 5, 0.3);
+      this.sfx.whoosh();
+      this.emit();
+      return;
+    }
+    this.holdOwner = owner;
+    this.holdWeb = true;
+    this.autoRetryT = 0;
+    this.tryAutoAttach();
+  }
+
+  private pressEnd(owner: number) {
+    if (owner === this.glideOwner) {
+      this.glideOwner = -1;
+      this.glideHold = false;
+      this.emit();
+    }
+    if (owner === this.holdOwner) {
+      this.holdOwner = -1;
+      this.holdWeb = false;
+      this.release(false);
+    }
+  }
 
   private onKey = (e: KeyboardEvent) => {
     if (e.code === "KeyR") {
@@ -408,20 +414,7 @@ export class Game {
       else if (this.state === "dead" && this.time - this.deadAt > 0.45)
         this.start();
       else if (this.state === "paused") this.resume();
-      else if (this.state === "playing" && !e.repeat) {
-        // one-button web: hold to auto-swing
-        this.holdWeb = true;
-        this.autoRetryT = 0;
-        this.tryAutoAttach();
-      }
-    } else if (
-      e.code === "ShiftLeft" ||
-      e.code === "ShiftRight" ||
-      e.code === "KeyG" ||
-      e.code === "ArrowDown"
-    ) {
-      e.preventDefault();
-      if (this.state === "playing" && !e.repeat) this.setGlide(true);
+      else if (this.state === "playing" && !e.repeat) this.pressStart(KEY_OWNER);
     } else if (e.code === "Escape") {
       if (this.state === "playing") this.pause();
       else if (this.state === "paused") this.resume();
@@ -430,56 +423,46 @@ export class Game {
 
   private onKeyUp = (e: KeyboardEvent) => {
     if (e.code === "Space" || e.code === "Enter") {
-      this.holdWeb = false;
-      this.release(false);
-    } else if (
-      e.code === "ShiftLeft" ||
-      e.code === "ShiftRight" ||
-      e.code === "KeyG" ||
-      e.code === "ArrowDown"
-    ) {
-      this.setGlide(false);
+      this.pressEnd(KEY_OWNER);
     }
   };
 
   /* ---------------- web ---------------- */
 
-  /** release the current web; rewards sweet-spot timing */
-  private release(reAim: boolean) {
+  /** release the current web; rewards letting go near the bottom of the arc */
+  private release(_reAim: boolean) {
     const p = this.player;
     if (!p.attached || this.state !== "playing") return;
-    // rope angle from straight-down (0 = hanging below anchor)
+    // rope angle from straight-down (0 = hanging below the anchor)
     const ang = (Math.atan2(p.x - p.ax, p.y - p.ay) * 180) / Math.PI;
     const sp = p.speed();
-    const perfect = p.vx > 260 && ang > 14 && ang < 68 && sp > 540;
+    const perfect =
+      Math.abs(ang) <= T.perfectAngleDeg && sp >= T.perfectMinSpeed;
     this.snapFx = { px: p.x, py: p.y, ax: p.ax, ay: p.ay, t: 0.26 };
     p.detach();
     this.sfx.whoosh();
     this.parts.burst(p.x, p.y, "rgba(235,250,255,1)", 6, 130, 2.4, 0.4, 300);
     if (perfect) {
-      p.vx *= 1.045;
-      p.vy *= 1.045;
-      this.perfectCombo = Math.min(9, this.perfectCombo + 1);
+      this.perfectCombo += 1;
+      // the chain earns speed one link at a time, up to a cap
+      if (this.perfectCombo <= T.perfectChainSpeedCap) {
+        const k = 1 + T.perfectGain;
+        p.vx *= k;
+        p.vy *= k;
+      }
+      this.slowT = Math.max(this.slowT, T.perfectSlowS);
       this.popup(
         p.x,
         p.y - 52,
-        this.perfectCombo > 1 ? `PERFECT ×${this.perfectCombo}` : "PERFECT!",
+        this.perfectCombo > 1 ? `PERFECT ×${this.perfectCombo}` : "PERFECT",
         "#7df0ff",
-        24,
+        20,
       );
       this.parts.ring(p.x, p.y, "rgba(125,240,255,0.9)", 8, 0.45);
       this.sfx.perfect(this.perfectCombo);
-      if (this.perfectCombo >= 3)
-        this.showAnnounce({
-          id: "perfect" + this.perfectCombo,
-          kind: "perfect",
-          title: `PERFECT ×${this.perfectCombo}`,
-          sub: "flawless release chain",
-        });
     } else {
       this.perfectCombo = 0;
     }
-    void reAim;
   }
 
   /**
@@ -503,7 +486,7 @@ export class Game {
       const dx = ax - p.x;
       const dy = ay - p.y;
       const d = Math.hypot(dx, dy);
-      if (d < minD || d > ROPE_MAX) return;
+      if (d < minD || d > T.ropeMax) return;
       if (dy > -24) return; // anchor must be clearly above
       if (dx < minBack) return;
       const theta = (Math.atan2(dx, -dy) * 180) / Math.PI; // 0 = straight up
@@ -523,8 +506,8 @@ export class Game {
     };
 
     // ceiling samples (desperate scans behind the spider too)
-    const from = desperate ? -ROPE_MAX : 46;
-    for (let ox = from; ox <= ROPE_MAX + 40; ox += 20) {
+    const from = desperate ? -T.ropeMax : 46;
+    for (let ox = from; ox <= T.ropeMax + 40; ox += 20) {
       const sx = p.x + ox;
       if (sx < 0) continue;
       if (w.ceilSolid(sx)) consider(sx, w.ceilY(sx) + 3);
@@ -550,8 +533,6 @@ export class Game {
     const cand = this.findBestAnchor() ?? this.findBestAnchor(true);
     if (!cand) return false;
     p.attach(cand.x, cand.y);
-    p.vx *= 1.02;
-    p.vy *= 1.02;
     this.attachTime = this.time;
     this.firstClick = true;
     this.parts.burst(cand.x, cand.y, "rgba(126,240,255,1)", 9, 150, 2.4, 0.35, 150);
@@ -642,26 +623,40 @@ export class Game {
     if (this.state !== "playing") return;
 
     this.runT += dt;
-    const sub = Math.max(1, Math.ceil(dt * 240));
-    const h = dt / sub;
-    for (let s = 0; s < sub; s++) {
-      this.step(h);
-      if (this.state !== "playing") break;
+    // release slow motion runs on real time and only lasts a few frames
+    let simDt = dt;
+    if (this.slowT > 0) {
+      simDt = dt * T.perfectSlowScale;
+      this.slowT = Math.max(0, this.slowT - dt);
+    }
+    // fixed-step simulation: the physics result never depends on frame rate
+    const fixed = 1 / T.stepHz;
+    this.acc = Math.min(this.acc + simDt, MAX_SLICE);
+    while (this.acc >= fixed && this.state === "playing") {
+      this.step(fixed);
+      this.acc -= fixed;
     }
     if (this.state !== "playing") return;
+    // blend between the last two steps so motion stays smooth at 60 and 120 Hz
+    const alpha = this.acc / fixed;
+    this.player.interpolate(alpha);
 
     const p = this.player;
     const sp = p.speed();
     this.maxSpeed = Math.max(this.maxSpeed, sp);
 
     // trail
-    p.trail.push({ x: p.x, y: p.y });
+    p.trail.push({ x: p.rx, y: p.ry });
     if (p.trail.length > 22) p.trail.shift();
 
     // power-up timers
     if (this.magnetT > 0) this.magnetT = Math.max(0, this.magnetT - dt);
     if (this.invulnT > 0) this.invulnT -= dt;
-    if (this.graceT > 0) this.graceT = Math.max(0, this.graceT - dt);
+    if (!p.attached && !p.grounded && this.gliding) {
+      this.glideFuel = Math.max(0, this.glideFuel - dt);
+    } else {
+      this.glideFuel = Math.min(T.glideFuel, this.glideFuel + T.glideRefill * dt);
+    }
     if (this.announceT > 0) {
       this.announceT -= dt;
       if (this.announceT <= 0) {
@@ -676,26 +671,26 @@ export class Game {
       if (this.coinChainT <= 0) this.coinChain = 0;
     }
 
-    // camera
-    const lk = clamp(p.vx * 0.22, -30, 260);
-    const tx = p.x - this.vw * 0.4 + lk;
-    const ty = p.y - this.vh * 0.52 + clamp(p.vy * 0.08, -70, 90);
-    this.cam.x = lerp(this.cam.x, tx, 1 - Math.exp(-dt * 7));
+    // camera: smooth follow, leads along the velocity
+    const lk = clamp(p.vx * T.camLead, -30, 260);
+    const tx = p.rx - this.vw * 0.4 + lk;
+    const ty = p.ry - this.vh * 0.52 + clamp(p.vy * 0.08, -70, 90);
+    this.cam.x = lerp(this.cam.x, tx, 1 - Math.exp(-dt * T.camFollow));
     this.cam.y = lerp(
       this.cam.y,
       clamp(ty, -280, 440),
-      1 - Math.exp(-dt * 4.2),
+      1 - Math.exp(-dt * T.camFollowY),
     );
     this.updateShake(dt);
-    this.world.ensure(p.x + this.vw);
+    this.world.ensure(p.rx + this.vw);
 
     this.updateTips(dt);
 
-    // one-button web: keep grabbing while the key is held
+    // one-button web: keep grabbing while the press is held
     if (this.holdWeb && !p.attached) {
       this.autoRetryT -= dt;
       if (this.autoRetryT <= 0) {
-        this.autoRetryT = 0.075;
+        this.autoRetryT = T.reattachEvery;
         this.tryAutoAttach();
       }
     }
@@ -707,7 +702,7 @@ export class Game {
     this.lowAlt = clamp(1 - alt / 300, 0, 1);
 
     // score + milestones
-    const m = Math.max(0, Math.floor((p.x - this.startX) / METER));
+    const m = Math.max(0, Math.floor((p.x - this.startX) / T.metre));
     if (m !== this.distM) this.distM = m;
     const ms = Math.floor(this.distM / 100) * 100;
     if (ms > 0 && ms > this.lastMilestone) {
@@ -716,58 +711,45 @@ export class Game {
       this.sfx.milestone();
     }
 
-    this.sfx.setWind(sp / MAXV);
-    this.sfx.padLevel(sp / MAXV);
+    const vmax = this.softMax();
+    this.sfx.setWind(sp / vmax);
+    this.sfx.padLevel(sp / vmax);
     this.emit();
+  }
+
+  /** soft speed ceiling in px/s, scaled to the screen width */
+  softMax(): number {
+    return T.softMaxScreens * Math.max(this.vw, 360);
   }
 
   private step(h: number) {
     const p = this.player;
-    // ---- glide: holding with no web out spreads the web-wings ----
-    // The spider catches air instead of dropping like a stone, which gives
-    // you time to find the next ledge (and makes the early game forgiving).
+    p.syncPrev();
+    // ---- glide: the second tap of a double tap spreads the web-wings ----
+    // Gravity is weakened while it lasts; there is no lift and no updraft.
     const glide =
+      this.glideHold &&
       !p.attached &&
       !p.grounded &&
-      (this.glideHold || this.holdWeb) &&
-      p.vy > -80 &&
+      this.glideFuel > 0 &&
       this.state === "playing";
+    if (glide && !this.gliding) this.popup(p.x, p.y - 40, "GLIDE", "#7df0ff", 16);
     this.gliding = glide;
-    p.vy += (glide ? G * GLIDE_G : G) * h;
-    if (glide) {
-      // speed turns into altitude: a fast glide climbs, a slow one sinks
-      const liftF = clamp((Math.abs(p.vx) - 270) / 620, 0, 1);
-      let targetVy = lerp(GLIDE_VY, GLIDE_CLIMB, liftF);
-      // thermals off the avenue — gliding can skim the street but never sink in
-      const alt = this.world.lavaY(p.x) - p.y;
-      let rate = 8;
-      if (alt < UPDRAFT_H) {
-        const u = clamp(1 - alt / UPDRAFT_H, 0, 1);
-        targetVy = lerp(targetVy, UPDRAFT_VY, u);
-        // the lower you are, the more instantly the updraft grabs you
-        rate = lerp(8, 42, u * u);
-      }
-      if (p.vy > targetVy) p.vy += (targetVy - p.vy) * Math.min(1, h * rate);
-      p.vx += GLIDE_FWD * h;
-    }
-    // pace quickens the further you go — gently
-    const fwd = p.attached
-      ? FWD_ATT + Math.min(50, this.distM * 0.25)
-      : FWD + Math.min(120, this.distM * 0.65);
-    p.vx += fwd * h * (p.grounded ? 2.2 : 1);
-    // gentle air drag
-    p.vx *= Math.pow(0.5, h * (p.attached ? 0.045 : 0.13));
-    p.vy *= Math.pow(0.5, h * 0.05);
-    const sp = p.speed();
-    if (sp > MAXV) {
-      const k = MAXV / sp;
-      p.vx *= k;
-      p.vy *= k;
-    }
+    p.vy += T.gravity * (glide ? T.glideGravity : 1) * h;
+
+    // soft ceiling: quadratic air drag, a = -k·|v|·v, k set so that the
+    // free-fall terminal speed equals softMax
+    const vmax = this.softMax();
+    const k = T.gravity / (vmax * vmax);
+    const f = 1 / (1 + k * p.speed() * h);
+    p.vx *= f;
+    p.vy *= f;
+
     p.x += p.vx * h;
     p.y += p.vy * h;
 
-    // rope constraint — rigid pendulum
+    // rope: rigid pendulum with honest momentum. Radial speed is removed;
+    // tangential speed is kept.
     if (p.attached) {
       const rx = p.x - p.ax;
       const ry = p.y - p.ay;
@@ -784,33 +766,6 @@ export class Game {
         }
       }
     }
-    // ---- active swing pumping (independent of gravity) ----
-    // The spider works the line himself: he drives the swing along its
-    // tangent and reels in on the way up / pays out on the way down.
-    if (p.attached) {
-      const rx2 = p.x - p.ax;
-      const ry2 = p.y - p.ay;
-      const d2 = Math.hypot(rx2, ry2) || 0.0001;
-      const tx = -ry2 / d2;
-      const ty = rx2 / d2;
-      const vt = p.vx * tx + p.vy * ty; // tangential speed (signed)
-      const dir = vt >= 0 ? 1 : -1;
-      const spd = p.speed();
-      // strongest when slow — this is what stops you from stalling out
-      const k = clamp(1 - spd / 1050, 0.1, 1);
-      p.vx += tx * dir * PUMP * k * h;
-      p.vy += ty * dir * PUMP * k * h;
-      this.pumpFx = clamp(k * (this.holdWeb ? 1 : 0.6), 0, 1);
-
-      // classic pendulum pumping: shorten going up, lengthen going down
-      const rising = p.vy < 0;
-      const minRope = Math.max(70, p.rope0 - 85);
-      const maxRope = p.rope0 + (this.holdWeb ? 70 : 20);
-      p.rope = clamp(p.rope + (rising ? -REEL : REEL * 0.8) * h, minRope, maxRope);
-    } else {
-      this.pumpFx = 0;
-    }
-    if (p.grounded && p.vx < 200) p.vx = Math.max(p.vx, p.vx + 900 * h);
     this.collide();
   }
 
@@ -982,8 +937,9 @@ export class Game {
     p.vx = p.vx * k + 80;
     p.vy = p.vy * k;
     const s2 = p.speed();
-    if (s2 > MAXV * 1.12) {
-      const c = (MAXV * 1.12) / s2;
+    const cap = this.softMax() * 1.12;
+    if (s2 > cap) {
+      const c = cap / s2;
       p.vx *= c;
       p.vy *= c;
     }
@@ -1030,26 +986,6 @@ export class Game {
 
   private die(cause: string) {
     if (this.state !== "playing") return;
-    // opening grace — nobody should die in the first seconds of a run
-    if (this.graceT > 0 && this.runT < 25) {
-      const p = this.player;
-      if (cause === "lava") {
-        p.y = this.world.lavaY(p.x) - p.r * 2.2;
-        p.vy = -700;
-        p.vx = Math.max(p.vx, 320);
-      } else {
-        // bounce off the hazard instead of dying (and don't get stuck in it)
-        p.attached = false;
-        p.vy = Math.min(p.vy, -420);
-        p.y -= p.r * 1.5;
-        p.vx = Math.max(p.vx * 0.75, 260);
-      }
-      this.parts.burst(p.x, p.y, "#7df0ff", 12, 240, 2.6, 0.5, 300);
-      this.parts.ring(p.x, p.y, "rgba(125,240,255,0.9)", 6, 0.4);
-      this.graceT = Math.max(this.graceT, 0.5); // brief i-frames after a bump
-      this.sfx.shieldUp();
-      return;
-    }
     if (this.shieldActive && this.invulnT <= 0) {
       this.breakShield(cause);
       return;
@@ -1096,7 +1032,6 @@ export class Game {
     if (this.show("swing")) return;
     if (this.gliding && this.show("glide")) return;
     if (this.runT > 3.5 && this.show("street")) return;
-    if (p.attached && this.runT > 6 && this.show("pump")) return;
 
     // then whatever hazard or pickup is coming up next
     const lookahead = 760;
@@ -1167,7 +1102,7 @@ export class Game {
       this.shieldActive,
       Math.ceil(this.magnetT),
       this.tip?.id ?? "",
-      Math.ceil(this.graceT),
+      Math.ceil(this.glideFuel * 5),
       this.gliding,
       this.announce?.id ?? "",
       Math.round(this.lowAlt * 5),
@@ -1187,7 +1122,7 @@ export class Game {
       shield: this.shieldActive,
       magnetT: this.magnetT,
       tip: this.tip,
-      graceT: this.graceT,
+      glideFuel: this.glideFuel,
       gliding: this.gliding,
       announce: this.announce,
       lowAlt: this.lowAlt,

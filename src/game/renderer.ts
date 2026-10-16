@@ -53,9 +53,9 @@ export class Renderer {
     const { ctx } = this;
     const p = g.player;
     const seen: { y: number; d: number }[] = [];
-    g.world.eachNear(p.x + 420, (o) => {
+    g.world.eachNear(p.rx + 420, (o) => {
       if (o.kind !== "stal" && o.kind !== "saw" && o.kind !== "spire") return;
-      const dx = o.x - p.x;
+      const dx = o.x - p.rx;
       if (dx < 40 || dx > 900) return;
       const oy =
         o.kind === "stal"
@@ -852,15 +852,15 @@ export class Renderer {
     if (!p.attached) return;
     const e = clamp((g.time - g.attachTime) / 0.09, 0, 1);
     const ease = 1 - Math.pow(1 - e, 3);
-    const ex = p.x + (p.ax - p.x) * ease;
-    const ey = p.y + (p.ay - p.y) * ease;
-    const curLen = Math.hypot(p.ax - p.x, p.ay - p.y);
+    const ex = p.rx + (p.ax - p.rx) * ease;
+    const ey = p.ry + (p.ay - p.ry) * ease;
+    const curLen = Math.hypot(p.ax - p.rx, p.ay - p.ry);
     const sag = Math.max(0, p.rope - curLen) * 0.55 * ease + (1 - ease) * 3;
-    const mx = (p.x + ex) / 2;
-    const my = (p.y + ey) / 2 + sag;
+    const mx = (p.rx + ex) / 2;
+    const my = (p.ry + ey) / 2 + sag;
     const path = () => {
       ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
+      ctx.moveTo(p.rx, p.ry);
       ctx.quadraticCurveTo(mx, my, ex, ey);
     };
     ctx.lineCap = "round";
@@ -904,13 +904,13 @@ export class Renderer {
       ctx.strokeStyle = `rgba(255,107,129,${(0.28 + 0.12 * Math.sin(g.time * 6)).toFixed(3)})`;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, mp, 0, Math.PI * 2);
+      ctx.arc(p.rx, p.ry, mp, 0, Math.PI * 2);
       ctx.stroke();
     }
     if (g.shieldActive) {
       ctx.fillStyle = "rgba(47,224,176,0.10)";
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 26, 0, Math.PI * 2);
+      ctx.arc(p.rx, p.ry, 26, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = "rgba(47,224,176,0.7)";
       ctx.lineWidth = 2.4;
@@ -920,45 +920,24 @@ export class Renderer {
       for (let k = 0; k < 2; k++) {
         const a0 = g.time * 1.8 + k * Math.PI;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 26, a0, a0 + 0.7);
+        ctx.arc(p.rx, p.ry, 26, a0, a0 + 0.7);
         ctx.stroke();
       }
     }
 
-    // pumping flare — the spider actively works the web
-    if (p.attached && g.pumpFx > 0.02) {
-      ctx.globalAlpha = g.pumpFx * 0.5;
-      ctx.strokeStyle = "#7df0ff";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 21 + g.pumpFx * 6, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-
-    // start-of-run grace halo
-    if (g.graceT > 0) {
-      const gp = 0.3 + 0.25 * Math.sin(g.time * 7);
-      ctx.strokeStyle = `rgba(125,240,255,${gp.toFixed(3)})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 30 + Math.sin(g.time * 7) * 3, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
     if (p.attached) {
-      const aa = Math.atan2(p.ay - p.y, p.ax - p.x);
+      const aa = Math.atan2(p.ay - p.ry, p.ax - p.rx);
       ctx.strokeStyle = "#d92646";
       ctx.lineWidth = 4.5;
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x + Math.cos(aa) * 15, p.y + Math.sin(aa) * 15);
+      ctx.moveTo(p.rx, p.ry);
+      ctx.lineTo(p.rx + Math.cos(aa) * 15, p.ry + Math.sin(aa) * 15);
       ctx.stroke();
     }
 
     ctx.save();
-    ctx.translate(p.x, p.y);
+    ctx.translate(p.rx, p.ry);
     ctx.rotate(ang);
     ctx.lineCap = "round";
 
@@ -1120,8 +1099,8 @@ export class Renderer {
     const n = Math.min(9, Math.floor((sp - 620) / 90) + 1);
     const ux = p.vx / sp;
     const uy = p.vy / sp;
-    const sx = p.x - g.cam.x + g.cam.sx;
-    const sy = p.y - g.cam.y + g.cam.sy;
+    const sx = p.rx - g.cam.x + g.cam.sx;
+    const sy = p.ry - g.cam.y + g.cam.sy;
     const seed = Math.floor(g.time * 24);
     ctx.lineCap = "round";
     for (let i = 0; i < n; i++) {

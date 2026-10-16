@@ -21,6 +21,7 @@ import { Game, type Snap } from "../game/engine";
 import { ChunkyButton, RoundButton, Panel, Sticker } from "./ui";
 import HowToPlay from "./HowToPlay";
 import AnnounceOverlay from "./Announce";
+import DebugPanel from "./DebugPanel";
 
 const causeText: Record<string, string> = {
   lava: "splattered on the avenue",
@@ -42,7 +43,7 @@ const initialSnap: Snap = {
   shield: false,
   magnetT: 0,
   tip: null,
-  graceT: 0,
+  glideFuel: 0,
   gliding: false,
   announce: null,
   lowAlt: 0,
@@ -154,11 +155,6 @@ export default function GameScreen() {
                 <Wind size={13} /> gliding
               </div>
             )}
-            {snap.graceT > 0 && (
-              <div className="font-display flex items-center gap-1.5 rounded-2xl border-b-2 border-[#1a93bd] bg-[#49d8ff]/90 px-3 py-1.5 text-xs font-extrabold uppercase tracking-wider text-[#06293a]">
-                <Sparkles size={13} /> safe {Math.ceil(snap.graceT)}s
-              </div>
-            )}
             {snap.shield && (
               <div className="font-display anim-pop-in flex items-center gap-1.5 rounded-2xl border-b-2 border-[#19876a] bg-[#2fe0b0]/90 px-3 py-1.5 text-xs font-extrabold uppercase tracking-wider text-[#05312a]">
                 <ShieldCheck size={13} /> shield
@@ -186,41 +182,11 @@ export default function GameScreen() {
                   style={{ opacity: Math.min(1, snap.lowAlt * 1.6) }}
                 >
                   <AlertTriangle size={15} />
-                  {snap.gliding ? "climbing out" : "pull up!"}
+                  pull up!
                 </div>
               </div>
             </>
           )}
-
-          {/* GLIDE button — hold to spread the web-wings */}
-          <div className="pointer-events-auto absolute bottom-5 right-4 sm:bottom-7 sm:right-6">
-            <button
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                gameRef.current?.setGlide(true);
-              }}
-              onPointerUp={(e) => {
-                e.stopPropagation();
-                gameRef.current?.setGlide(false);
-              }}
-              onPointerLeave={() => gameRef.current?.setGlide(false)}
-              onPointerCancel={() => gameRef.current?.setGlide(false)}
-              onContextMenu={(e) => e.preventDefault()}
-              aria-label="Glide"
-              className={`font-display flex h-[72px] w-[72px] select-none flex-col items-center justify-center gap-0.5 rounded-full border-b-[5px] text-[9px] font-extrabold uppercase tracking-[0.12em] transition-all duration-100 active:translate-y-[5px] active:border-b-0 ${
-                snap.gliding
-                  ? "anim-glide-chip border-[#1a93bd] bg-[#49d8ff] text-[#06293a]"
-                  : "border-black/45 bg-[#1b2246]/85 text-white/75 backdrop-blur-sm"
-              }`}
-            >
-              <Wind size={22} strokeWidth={2.6} />
-              glide
-            </button>
-            <div className="font-display mt-1.5 text-center text-[9px] font-bold uppercase tracking-[0.18em] text-white/30">
-              hold · shift
-            </div>
-          </div>
 
           {/* contextual tutorial banner */}
           {snap.tip && (
@@ -426,6 +392,7 @@ export default function GameScreen() {
 
       {/* ============ TRANSFORMATION CALLOUT ============ */}
       {snap.announce && !help && <AnnounceOverlay data={snap.announce} />}
+      <DebugPanel />
 
       {/* ============ HOW TO PLAY ============ */}
       {help && (
