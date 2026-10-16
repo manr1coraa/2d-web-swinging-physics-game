@@ -8,11 +8,14 @@ export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private haloGrad: CanvasGradient | null = null;
   private lampGrad: CanvasGradient | null = null;
+  private ropePts: { x: number; y: number; px: number; py: number }[] = [];
+  private ropeSegs = 14;
 
   constructor(public canvas: HTMLCanvasElement) {
     const c = canvas.getContext("2d");
     if (!c) throw new Error("2d context unavailable");
     this.ctx = c;
+    c.imageSmoothingEnabled = false;
   }
 
   render(g: Game) {
@@ -20,6 +23,7 @@ export class Renderer {
     const w = g.vw;
     const h = g.vh;
     ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false;
 
     const T = themeDef(g.theme);
     this.sky(g, w, h, T);
@@ -1461,39 +1465,106 @@ export class Renderer {
   private rope(g: Game) {
     const { ctx } = this;
     const p = g.player;
-    if (!p.attached) return;
+    if (!p.attached) {
+      this.ropePts = [];
+      return;
+    }
     const e = clamp((g.time - g.attachTime) / 0.09, 0, 1);
     const ease = 1 - Math.pow(1 - e, 3);
     const ex = p.x + (p.ax - p.x) * ease;
     const ey = p.y + (p.ay - p.y) * ease;
-    const curLen = Math.hypot(p.ax - p.x, p.ay - p.y);
-    // a real web stretches and sags: more speed -> more droop, and the
-    // line never goes perfectly straight even under load.
-    const stretch = clamp(p.speed() / 1050, 0, 1) * 14;
-    const sag = Math.max(4, (p.rope - curLen) * 0.55 * ease + (1 - ease) * 4) + stretch * ease;
-    const mx = (p.x + ex) / 2;
-    const my = (p.y + ey) / 2 + sag;
-    const path = () => {
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.quadraticCurveTo(mx, my, ex, ey);
-    };
+    const ropeLen = Math.max(40, p.rope);
+    const N = this.ropeSegs;
+    const segLen = ropeLen / (N - 1);
+
+    // initialise the segmented web once per attach
+    if (this.ropePts.length !== N) {
+      this.ropePts = [];
+      for (let i = 0; i < N; i++) {
+        const t = i / (N - 1);
+        this.ropePts.push({
+          x: p.x + (ex - p.x) * t,
+          y: p.y + (ey - p.y) * t,
+          px: p.x + (ex - p.x) * t,
+          py: p.y + (ey - p.y) * t,
+        });
+      }
+    }
+
+    const pts = this.ropePts;
+    // pin ends
+    pts[0].x = p.x;
+    pts[0].y = p.y;
+    pts[N - 1].x = ex;
+    pts[N - 1].y = ey;
+
+    // Verlet integration: inertia + gravity gives the web its spring/bounce
+    const grav = 180;
+    for (let i = 1; i < N - 1; i++) {
+      const pt = pts[i];
+      const vx = (pt.x - pt.px) * 0.92;
+      const vy = (pt.y - pt.py) * 0.92;
+      pt.px = pt.x;
+      pt.py = pt.y;
+      pt.x += vx;
+      pt.y += vy + grav * 0.00016;
+    }
+
+    // constraint relaxation: keep segment lengths, let the web sag & spring
+    for (let iter = 0; iter < 6; iter++) {
+      for (let i = 0; i < N - 1; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.0001;
+        const diff = (d - segLen) / d;
+        const ox = dx * diff * 0.5;
+        const oy = dy * diff * 0.5;
+        if (i > 0) {
+          a.x += ox;
+          a.y += oy;
+        }
+        if (i < N - 2) {
+          b.x -= ox;
+          b.y -= oy;
+        }
+      }
+      // re-pin ends after relaxation
+      pts[0].x = p.x;
+      pts[0].y = p.y;
+      pts[N - 1].x = ex;
+      pts[N - 1].y = ey;
+    }
+
+    // draw the segmented web (shadow + glow + core)
     ctx.lineCap = "round";
-    path();
+    ctx.lineJoin = "round";
+    // shadow
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < N; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.strokeStyle = "rgba(6,10,30,0.55)";
     ctx.lineWidth = 3.4;
     ctx.stroke();
+    // glow
     ctx.setLineDash([12, 18]);
     ctx.lineDashOffset = -g.time * 190;
-    path();
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < N; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.strokeStyle = "rgba(126,231,255,0.35)";
     ctx.lineWidth = 4.6;
     ctx.stroke();
     ctx.setLineDash([]);
-    path();
+    // core
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < N; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.strokeStyle = "rgba(242,254,255,0.95)";
     ctx.lineWidth = 1.7;
     ctx.stroke();
+
     if (e >= 1) {
       ctx.strokeStyle = "rgba(240,252,255,0.9)";
       ctx.lineWidth = 2;

@@ -971,7 +971,7 @@ export class Game {
     // A current is honest drag: the air pulls the body toward its own
     // velocity. Strong enough in the core to carry you, gentle at the edges.
     if (wind.gain > 0.01) {
-      const c = wind.gain * wind.gain * 8; // 1/s
+      const c = wind.gain * wind.gain * 12; // 1/s
       const k = Math.min(1, c * h);
       p.vx += (wind.vx - p.vx) * k;
       p.vy += (wind.vy - p.vy) * k;
