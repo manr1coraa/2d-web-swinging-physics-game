@@ -5,6 +5,41 @@ import { clamp, lerp, hash, noise1, wrap } from "./util";
 const CONCRETE = "#0b1024";
 const TRIM = "#49d8ff";
 
+/* ---- districts: the sky shifts as you travel (dusk → harbour → deep night) ---- */
+const SKY_STOPS: [string, string, string, string][] = [
+  ["#070b22", "#121a3e", "#2b2254", "#5c3161"], // city night
+  ["#0a1230", "#16285a", "#2f3d6e", "#7a4f6e"], // harbour: cooler, more blue
+  ["#03040f", "#0c1028", "#1e1640", "#3d2452"], // deep night: darker, quieter
+];
+const DISTRICT_M = 260; // metres per district
+const BLEND_M = 90; // last part of each district fades into the next
+
+function mixHex(a: string, b: string, t: number): string {
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const ch = (v: number, s: number) => (v >> s) & 255;
+  const out = [16, 8, 0].map((s) =>
+    Math.round(ch(pa, s) + (ch(pb, s) - ch(pa, s)) * t),
+  );
+  return `#${out.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function skyAt(dist: number): [string, string, string, string] {
+  const n = SKY_STOPS.length;
+  const d = Math.max(0, dist);
+  const idx = Math.floor(d / DISTRICT_M);
+  const inside = d - idx * DISTRICT_M;
+  const cur = SKY_STOPS[idx % n];
+  const next = SKY_STOPS[(idx + 1) % n];
+  const t = clamp((inside - (DISTRICT_M - BLEND_M)) / BLEND_M, 0, 1);
+  return [0, 1, 2, 3].map((k) => mixHex(cur[k], next[k], t)) as [
+    string,
+    string,
+    string,
+    string,
+  ];
+}
+
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
 
@@ -20,7 +55,7 @@ export class Renderer {
     const h = g.vh;
     ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
 
-    this.sky(w, h);
+    this.sky(w, h, g.distM);
     this.stars(g, w, h);
     this.skyline(g, w, h);
     // push the background back so gameplay objects pop forward
@@ -96,13 +131,14 @@ export class Renderer {
 
   /* ---------------- background ---------------- */
 
-  private sky(w: number, h: number) {
+  private sky(w: number, h: number, dist = 0) {
     const { ctx } = this;
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "#070b22");
-    grad.addColorStop(0.42, "#121a3e");
-    grad.addColorStop(0.72, "#2b2254");
-    grad.addColorStop(1, "#5c3161");
+    const sky = skyAt(dist);
+    grad.addColorStop(0, sky[0]);
+    grad.addColorStop(0.42, sky[1]);
+    grad.addColorStop(0.72, sky[2]);
+    grad.addColorStop(1, sky[3]);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
@@ -826,6 +862,8 @@ export class Renderer {
     const sag = Math.max(0, p.rope - curLen) * 0.55 * ease + (1 - ease) * 3;
     const mx = (p.rx + ex) / 2;
     const my = (p.ry + ey) / 2 + sag;
+    // taut rope glows brighter, slack rope is dimmer: tension you can read
+    const taut = clamp(curLen / Math.max(1, p.rope), 0, 1) * ease;
     const path = () => {
       ctx.beginPath();
       ctx.moveTo(p.rx, p.ry);
@@ -839,7 +877,7 @@ export class Renderer {
     ctx.setLineDash([12, 18]);
     ctx.lineDashOffset = -g.time * 190;
     path();
-    ctx.strokeStyle = "rgba(126,231,255,0.35)";
+    ctx.strokeStyle = `rgba(126,231,255,${(0.2 + 0.35 * taut).toFixed(3)})`;
     ctx.lineWidth = 4.6;
     ctx.stroke();
     ctx.setLineDash([]);

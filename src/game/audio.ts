@@ -185,10 +185,16 @@ export class Sfx {
   }
 
   /** perfect release — pitch climbs with combo */
+  /**
+   * Perfect releases climb one major-pentatonic step each, so a long chain
+   * plays as a melody that never clashes with the ambient pad.
+   */
   perfect(n: number) {
-    const f = 590 * (1 + Math.min(n, 8) * 0.09);
-    this.tone(f, f, 0.09, "triangle", 0.13);
-    this.tone(f * 1.5, f * 1.5, 0.2, "sine", 0.1, 0.07);
+    const steps = [0, 2, 4, 7, 9, 12, 14, 16, 19];
+    const semis = steps[Math.min(Math.max(n, 1), steps.length) - 1];
+    const f = 523.25 * Math.pow(2, semis / 12); // C5 base
+    this.tone(f, f, 0.12, "triangle", 0.13);
+    this.tone(f * 2, f * 2, 0.22, "sine", 0.06, 0.04);
   }
 
   milestone() {
