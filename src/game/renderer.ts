@@ -72,11 +72,9 @@ export class Renderer {
     this.worldObjects(g);
     this.upperCity(g);
     g.parts.draw(ctx);
-    if (g.state !== "menu") {
-      this.trail(g);
-      this.rope(g);
-      if (g.state === "playing" || g.state === "paused") this.spider(g);
-    }
+    this.trail(g);
+    this.rope(g);
+    if (g.state !== "dying" && g.state !== "dead") this.spider(g);
     this.popups(g);
     this.aimMark(g);
     this.snapMark(g);

@@ -8,22 +8,23 @@ import { live as T } from "./tuning";
 
 export type GameState = "menu" | "playing" | "dying" | "dead" | "paused";
 
+export interface Settings {
+  sound: boolean;
+  music: boolean;
+  vibration: boolean;
+}
+
 export interface Snap {
   state: GameState;
   dist: number;
-  coins: number;
   best: number;
   newBest: boolean;
-  muted: boolean;
-  maxSpeed: number;
   cause: string;
-  showHint: boolean;
-  shield: boolean;
-  tip: Tip | null;
-  glideFuel: number;
+  chain: number; // current perfect-release chain, 0 = none
   gliding: boolean;
-  announce: Announce | null;
-  lowAlt: number; // 0..1 — how close to the street you are
+  glideFuel: number; // 0..1
+  tip: Tip | null;
+  settings: Settings;
 }
 
 export interface Tip {
@@ -33,71 +34,27 @@ export interface Tip {
   tone: "info" | "danger" | "good";
 }
 
-/** contextual lessons, fired the first time you approach each thing */
+/** contextual lessons: three in total, each shown once */
 export const TIPS: Record<string, Tip> = {
   swing: {
     id: "swing",
     title: "Hold to swing",
-    text: "Hold to hook a ledge. Let go near the bottom of the swing for a perfect release.",
+    text: "Hold to hook a ledge. Let go near the bottom of the arc.",
     tone: "info",
   },
   glide: {
     id: "glide",
-    title: "Glide mode",
-    text: "Double tap, and hold on the second tap, to glide. Glide fuel runs out.",
+    title: "Glide",
+    text: "Double tap, then hold the second tap. Glide costs fuel.",
     tone: "good",
   },
   street: {
     id: "street",
     title: "Mind the street",
-    text: "Hitting the avenue ends the run. Keep your arc above the traffic.",
+    text: "Touching the street or a hazard ends the run.",
     tone: "danger",
-  },
-  stal: {
-    id: "stal",
-    title: "Construction girder",
-    text: "Steel beams with hazard stripes hang from above. Swing under or around them.",
-    tone: "danger",
-  },
-  spire: {
-    id: "spire",
-    title: "Skyscraper",
-    text: "Towers rise from the street. Crashing into one is fatal — web over the roof.",
-    tone: "danger",
-  },
-  saw: {
-    id: "saw",
-    title: "Patrol drone",
-    text: "Those rotors hurt. Time your arc so you pass well clear of the red eye.",
-    tone: "danger",
-  },
-  plat: {
-    id: "plat",
-    title: "Scaffold",
-    text: "Safe to land on and to web onto. Great for resetting a bad line.",
-    tone: "good",
-  },
-  coin: {
-    id: "coin",
-    title: "Coins",
-    text: "Strung along the ideal arc. Chain them for a rising combo jingle.",
-    tone: "good",
-  },
-  shield: {
-    id: "shield",
-    title: "Shield bubble",
-    text: "Absorbs one fatal hit and throws you back into the air. One save per pickup.",
-    tone: "good",
   },
 };
-
-/** full-screen transformation callout */
-export interface Announce {
-  id: string;
-  kind: "shield" | "glide" | "perfect" | "save";
-  title: string;
-  sub: string;
-}
 
 export interface Popup {
   x: number;
@@ -113,6 +70,7 @@ const MAX_SLICE = 0.25; // never simulate more than this much real time at once
 
 const BEST_KEY = "pauchok_best";
 const KEY_OWNER = -2; // press id used for the keyboard
+const SETTINGS_KEY = "webby_settings";
 const TAUGHT_KEY = "webby_taught";
 
 export class Game {
@@ -151,8 +109,6 @@ export class Game {
   private acc = 0; // fixed-step accumulator
   private slowT = 0; // real seconds of release slow motion left
   lowAlt = 0;
-  announce: Announce | null = null;
-  private announceT = 0;
   private autoRetryT = 0;
 
   // tutorial
@@ -179,6 +135,11 @@ export class Game {
   private perfectCombo = 0;
   private lastMilestone = 0;
 
+  settings: Settings = { sound: true, music: true, vibration: true };
+  private demoT = 0;
+  private demoNext = 0;
+  private demoDrop = 0;
+
   private raf = 0;
   private last = 0;
   private cb: (s: Snap) => void;
@@ -189,6 +150,8 @@ export class Game {
     this.cb = cb;
     this.renderer = new Renderer(canvas);
     try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (raw) this.settings = { ...this.settings, ...JSON.parse(raw) };
       this.best = parseInt(localStorage.getItem(BEST_KEY) ?? "0", 10) || 0;
       const saved = localStorage.getItem(TAUGHT_KEY);
       if (saved) this.taught = new Set<string>(JSON.parse(saved) as string[]);
@@ -205,6 +168,8 @@ export class Game {
     document.addEventListener("visibilitychange", this.onVis);
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
     this.world.ensure(0);
+    this.applySettings();
+    this.demoReset();
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.frame);
     this.emit();
@@ -243,8 +208,6 @@ export class Game {
     this.holdOwner = -1;
     this.acc = 0;
     this.slowT = 0;
-    this.announce = null;
-    this.announceT = 0;
     this.tip = null;
     this.tipT = 0;
     this.tipScanT = 0;
@@ -265,6 +228,7 @@ export class Game {
     if (this.state === "playing" || this.state === "dying" || this.state === "paused")
       this.state = "menu";
     this.player.attached = false;
+    this.demoReset();
     this.sfx.setWind(0);
     this.sfx.padStop();
     this.emit();
@@ -286,15 +250,31 @@ export class Game {
     this.emit();
   }
 
-  toggleMute() {
-    this.sfx.setMuted(!this.sfx.muted);
+  /** change settings; applied at once and remembered */
+  setSettings(next: Partial<Settings>) {
+    this.settings = { ...this.settings, ...next };
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings));
+    } catch {
+      /* ignore */
+    }
+    this.applySettings();
     this.emit();
   }
 
-  private showAnnounce(a: Announce) {
-    this.announce = a;
-    this.announceT = 1.5;
-    this.emit();
+  private applySettings() {
+    this.sfx.setMuted(!this.settings.sound);
+    this.sfx.setMusic(this.settings.music);
+  }
+
+  /** short haptic pulse where the platform supports it */
+  private buzz(ms: number) {
+    if (!this.settings.vibration) return;
+    try {
+      navigator.vibrate?.(ms);
+    } catch {
+      /* ignore */
+    }
   }
 
   dispose() {
@@ -390,7 +370,7 @@ export class Game {
       e.preventDefault();
       this.start();
     } else if (e.code === "KeyM") {
-      this.toggleMute();
+      this.setSettings({ sound: !this.settings.sound });
     } else if (e.code === "KeyP") {
       e.preventDefault();
       if (this.state === "playing") this.pause();
@@ -448,6 +428,7 @@ export class Game {
       );
       this.parts.ring(p.x, p.y, "rgba(125,240,255,0.9)", 8, 0.45);
       this.sfx.perfect(this.perfectCombo);
+      this.buzz(8);
     } else {
       this.perfectCombo = 0;
     }
@@ -584,10 +565,9 @@ export class Game {
     this.parts.update(dt);
 
     if (this.state === "menu") {
-      this.cam.x += dt * 46;
-      this.world.ensure(this.cam.x + this.vw);
-      this.cam.y = lerp(this.cam.y, 30, 1 - Math.exp(-dt * 2));
-      this.cam.zoom = lerp(this.cam.zoom, 1, 1 - Math.exp(-dt * 2));
+      this.updateDemo(dt);
+      this.world.ensure(this.player.rx + this.vw);
+      this.updateCamera(dt, this.player);
       this.updateShake(dt);
       return;
     }
@@ -646,14 +626,6 @@ export class Game {
     } else {
       this.glideFuel = Math.min(T.glideFuel, this.glideFuel + T.glideRefill * dt);
     }
-    if (this.announceT > 0) {
-      this.announceT -= dt;
-      if (this.announceT <= 0) {
-        this.announce = null;
-        this.emit();
-      }
-    }
-
     // coin chain window
     if (this.coinChainT > 0) {
       this.coinChainT -= dt;
@@ -696,6 +668,53 @@ export class Game {
     this.sfx.setWind(sp / vmax);
     this.sfx.padLevel(sp / vmax);
     this.emit();
+  }
+
+  /** menu backdrop: the spider swings by itself, it never dies here */
+  private demoReset() {
+    this.world = new World();
+    this.world.ensure(0);
+    this.player.reset(this.startX, this.world.ceilY(this.startX) + 225, T.startVx);
+    this.cam.x = this.player.rx - this.vw * 0.4;
+    this.cam.y = this.player.ry - this.vh * 0.52;
+    this.cam.vx = 0;
+    this.cam.vy = 0;
+    this.cam.zoom = 1;
+    this.demoT = 0;
+    this.demoNext = 0.6;
+    this.demoDrop = 0;
+    this.acc = 0;
+  }
+
+  private updateDemo(dt: number) {
+    const p = this.player;
+    this.demoT += dt;
+    if (p.y > this.world.lavaY(p.x) - 60 || p.x > this.startX + 2600) {
+      this.demoReset();
+      return;
+    }
+    if (!p.attached && this.demoT >= this.demoNext) {
+      const c = this.findBestAnchor() ?? this.findBestAnchor(true);
+      if (c) {
+        p.attach(c.x, c.y);
+        this.demoDrop = this.demoT + 1.4 + Math.random() * 0.5;
+      } else {
+        this.demoNext = this.demoT + 0.15;
+      }
+    } else if (p.attached && this.demoT >= this.demoDrop) {
+      p.detach();
+      this.demoNext = this.demoT + 0.3;
+    }
+    const fixed = 1 / T.stepHz;
+    this.acc = Math.min(this.acc + dt, MAX_SLICE);
+    while (this.acc >= fixed) {
+      this.step(fixed);
+      this.acc -= fixed;
+    }
+    p.interpolate(this.acc / fixed);
+    p.trail.push({ x: p.rx, y: p.ry });
+    if (p.trail.length > 22) p.trail.shift();
+    p.stepSquash(dt);
   }
 
   /**
@@ -887,12 +906,6 @@ export class Game {
           if (!o.got && dist(p.x, p.y, o.x, o.y) < 34 + p.r) {
             o.got = true;
             this.shieldActive = true;
-            this.showAnnounce({
-              id: "shield" + Math.floor(this.time * 10),
-              kind: "shield",
-              title: "SHIELD UP",
-              sub: "absorbs one fatal hit",
-            });
             this.popup(p.x, p.y - 56, "SHIELD ON", "#2fe0b0", 22);
             this.parts.burst(o.x, o.y, "#2fe0b0", 12, 190, 2.6, 0.5, 240);
             this.parts.ring(o.x, o.y, "rgba(47,224,176,0.9)", 5, 0.4);
@@ -931,12 +944,6 @@ export class Game {
       p.vx += 90;
     }
     this.trauma = Math.min(0.7, this.trauma + 0.45);
-    this.showAnnounce({
-      id: "save" + Math.floor(this.time * 10),
-      kind: "save",
-      title: "SAVED!",
-      sub: "shield absorbed the hit",
-    });
     this.popup(p.x, p.y - 64, "SAVED!", "#2fe0b0", 28);
     this.parts.burst(p.x, p.y, "#2fe0b0", 20, 340, 3, 0.6, 420);
     this.parts.ring(p.x, p.y, "rgba(47,224,176,0.95)", 10, 0.6);
@@ -964,6 +971,7 @@ export class Game {
     this.parts.ring(p.x, p.y, "rgba(255,255,255,0.9)", 8, 0.6);
     this.sfx.death();
     this.sfx.padStop();
+    this.buzz(40);
     if (this.distM > this.best) {
       this.best = this.distM;
       this.newBest = true;
@@ -986,24 +994,11 @@ export class Game {
     if (this.tipScanT > 0) return;
     this.tipScanT = 0.2;
 
-    const p = this.player;
     // core lessons first
     if (this.show("swing")) return;
     if (this.gliding && this.show("glide")) return;
     if (this.runT > 3.5 && this.show("street")) return;
 
-    // then whatever hazard or pickup is coming up next
-    const lookahead = 760;
-    let found: string | null = null;
-    this.world.eachNear(p.x + 420, (o) => {
-      if (found) return;
-      const ox = o.x;
-      if (ox < p.x + 120 || ox > p.x + lookahead) return;
-      if (o.kind === "coin" && o.got) return;
-      if (o.kind === "shield" && o.got) return;
-      if (!this.taught.has(o.kind) && TIPS[o.kind]) found = o.kind;
-    });
-    if (found) this.show(found);
   }
 
   private show(id: string): boolean {
@@ -1047,41 +1042,34 @@ export class Game {
   /* ---------------- snapshot for React HUD ---------------- */
 
   private emit() {
+    const st = this.settings;
     const key = [
       this.state,
       this.distM,
-      this.coins,
       this.best,
       this.newBest,
-      this.sfx.muted,
-      Math.round(this.maxSpeed),
       this.cause,
-      this.state === "playing" && !this.firstClick,
-      this.shieldActive,
-      this.tip?.id ?? "",
-      Math.ceil(this.glideFuel * 5),
+      this.perfectCombo,
       this.gliding,
-      this.announce?.id ?? "",
-      Math.round(this.lowAlt * 5),
+      Math.round(this.glideFuel * 10),
+      this.tip?.id ?? "",
+      st.sound,
+      st.music,
+      st.vibration,
     ].join("|");
     if (key === this.lastKey) return;
     this.lastKey = key;
     this.cb({
       state: this.state,
       dist: this.distM,
-      coins: this.coins,
       best: this.best,
       newBest: this.newBest,
-      muted: this.sfx.muted,
-      maxSpeed: this.maxSpeed,
       cause: this.cause,
-      showHint: this.state === "playing" && !this.firstClick,
-      shield: this.shieldActive,
-      tip: this.tip,
-      glideFuel: this.glideFuel,
+      chain: this.perfectCombo,
       gliding: this.gliding,
-      announce: this.announce,
-      lowAlt: this.lowAlt,
+      glideFuel: this.glideFuel / T.glideFuel,
+      tip: this.tip,
+      settings: { ...st },
     });
   }
 }

@@ -211,7 +211,16 @@ export class Sfx {
     f: BiquadFilterNode;
   } | null = null;
 
+  /** background pad on/off (the sound effects are separate) */
+  musicOn = true;
+
+  setMusic(on: boolean) {
+    this.musicOn = on;
+    if (!on) this.padStop();
+  }
+
   padStart() {
+    if (!this.musicOn) return;
     if (!this.ensure() || !this.ctx || !this.master || this.pad) return;
     const c = this.ctx;
     const t = c.currentTime;
