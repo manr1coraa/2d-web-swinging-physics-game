@@ -19,9 +19,18 @@ function makeCtx(canvas: unknown) {
 
 export const rafQueue: ((t: number) => void)[] = [];
 
-export function installDom() {
+/** canvas factory: harnesses with the native backend pass createCanvas here */
+export type CanvasFactory = (w: number, h: number) => unknown;
+
+function realCanvas(factory: CanvasFactory | null, w = 1280, h = 720): unknown {
+  if (factory) return factory(w, h);
+  return null as unknown as never;
+}
+
+export function installDom(factory: CanvasFactory | null = null) {
   const listeners: Record<string, ((e: unknown) => void)[]> = {};
-  const canvas = {
+  const real = factory ? realCanvas(factory) : null;
+  const canvas = real ?? {
     width: 0,
     height: 0,
     style: {},
@@ -64,7 +73,8 @@ export function installDom() {
     hidden: false,
     addEventListener: () => {},
     removeEventListener: () => {},
-    createElement: () => canvas,
+    // offscreen canvases (baked backdrops) need the real backend when we have it
+    createElement: (tag?: string) => (factory && tag === "canvas" ? realCanvas(factory, 320, 320) : canvas),
   };
   g.localStorage = win.localStorage;
   g.requestAnimationFrame = win.requestAnimationFrame;

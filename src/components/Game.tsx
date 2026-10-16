@@ -30,7 +30,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Game, MAX_LEVELS, type Snap } from "../game/engine";
-import { themeForLevel, type ThemeId } from "../game/world";
+import { LEVELS_PER_WORLD, themeForLevel, type ThemeId } from "../game/world";
 import { THEME_DEFS } from "../game/themes";
 import { ChunkyButton, RoundButton, Panel, Sticker } from "./ui";
 import HowToPlay from "./HowToPlay";
@@ -83,8 +83,11 @@ const THEME_ICON: Record<ThemeId, typeof Wind> = {
   neon: Droplets,
 };
 
-/** Worlds are grouped in fives; you pick a world, and it starts at its first level. */
-const WORLDS = Array.from({ length: MAX_LEVELS / 5 }, (_, i) => i * 5);
+/** Every world is five stretches of one place; you pick it and start at stretch 1. */
+const WORLDS = Array.from(
+  { length: Math.ceil(MAX_LEVELS / LEVELS_PER_WORLD) },
+  (_, i) => i * LEVELS_PER_WORLD,
+);
 
 export default function GameScreen() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -150,14 +153,14 @@ export default function GameScreen() {
 
   const worldStart = WORLDS[world];
   const worldUnlocked = snap.unlocked >= worldStart;
-  const worldThemes = useMemo(
+  const stretches = useMemo(
     () =>
-      Array.from({ length: 5 }, (_, k) => {
-        const lv = worldStart + k;
-        const tid = themeForLevel(lv);
-        return { lv, tid, def: THEME_DEFS[tid] };
-      }),
-    [worldStart],
+      Array.from({ length: LEVELS_PER_WORLD }, (_, k) => ({
+        lv: worldStart + k,
+        n: k + 1,
+        open: worldStart + k <= snap.unlocked,
+      })),
+    [worldStart, snap.unlocked],
   );
   const worldName = THEME_DEFS[themeForLevel(worldStart)].name;
   const worldTag = THEME_DEFS[themeForLevel(worldStart)].tag;
@@ -410,20 +413,28 @@ export default function GameScreen() {
               play
             </button>
 
-            {/* a compact preview of what the world holds */}
+            {/* the five stretches of this world */}
             <div className="flex items-center justify-center gap-1.5">
-              {worldThemes.map(({ lv, def }) => (
+              {stretches.map(({ lv, n, open }) => (
                 <span
                   key={lv}
-                  title={def.name}
-                  className="rounded-md border px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em]"
+                  title={
+                    open
+                      ? `stretch ${n} (level ${lv + 1}) — start here`
+                      : `stretch ${n} — locked`
+                  }
+                  className="font-display rounded-md border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em]"
                   style={{
-                    borderColor: `${def.trim}44`,
-                    color: lv <= snap.unlocked ? def.trim : "rgba(255,255,255,0.25)",
+                    borderColor: open
+                      ? `${THEME_DEFS[themeForLevel(lv)].trim}55`
+                      : "rgba(255,255,255,0.1)",
+                    color: open
+                      ? THEME_DEFS[themeForLevel(lv)].trim
+                      : "rgba(255,255,255,0.22)",
                     background: "rgba(10,13,28,0.7)",
                   }}
                 >
-                  lv{lv + 1}
+                  {n}
                 </span>
               ))}
             </div>
@@ -497,7 +508,10 @@ export default function GameScreen() {
                 {gateM} m · {snap.coins} coins
               </div>
               <div className="mt-2.5 text-[10px] font-bold uppercase tracking-[0.2em] text-white/35">
-                next world
+                {Math.floor(snap.level / LEVELS_PER_WORLD) ===
+                Math.floor((snap.level + 1) / LEVELS_PER_WORLD)
+                  ? "next stretch"
+                  : "next world"}
               </div>
               <div
                 className="font-display mt-1 text-2xl font-extrabold"

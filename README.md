@@ -27,6 +27,8 @@ npm run build    # single-file сборка в dist/index.html
 - После портала уровень повышается, а мир меняется: **неоновый город, джунгли,
   подводная впадина, пустынный каньон, ледник, вулкан, орбита, неоновый квартал**
   (40 уровней = 8 миров × 5 кругов).
+- **Тема одна на мир**: пять кругов одного мира идут в одной палитре (в меню это
+  пять одинаковых «отрезков» мира), поэтому смена картинки всегда = смена мира.
 - Прогресс сохраняется в `localStorage`; в меню можно выбрать любой открытый мир
   и стартовать именно с него.
 - В каждом мире свои опасности и украшения: горящие крыши, рыбы, дроны-охотники,
@@ -58,15 +60,30 @@ npm run build    # single-file сборка в dist/index.html
 ## Инструменты для отладки
 
 ```bash
-npx esbuild tools/sim.ts --bundle --format=cjs --platform=node --outfile=tools/sim.cjs
+for t in sim gaps mechanics ab lazy; do
+  npx esbuild tools/$t.ts --bundle --format=cjs --platform=node --outfile=tools/$t.cjs
+done
 node tools/sim.cjs 1 2 3        # прогон бота по уровням (headless)
-node tools/gaps.ts              # проверка достижимости выступов
-node tools/mechanics.cjs        # 17 проверок: потоки, огонь, люки, миры
+node tools/gaps.cjs             # проверка достижимости выступов
+node tools/mechanics.cjs        # 18 проверок: потоки, огонь, люки, миры
 node tools/ab.cjs               # физика верёвки против исходной версии
 node tools/lazy.cjs 1           # зажать кнопку и никогда не отпускать
 ```
 
+```bash
+for t in e2e perf spike; do
+  npx esbuild tools/$t.ts --bundle --format=esm --platform=node \
+    --outfile=tools/$t.mjs --external:jsdom --external:@napi-rs/canvas
+done
+node tools/e2e.mjs              # UI целиком: 23 проверки (меню, HUD, пауза, мир)
+node tools/perf.mjs             # цена кадра (avg/p95/max) по уровням
+node tools/spike.mjs            # какой шаг рендера «залипает»
+```
+
 `tools/` — headless-заглушки DOM и скриптовый «игрок», которым проверялась
 физика, достижимость выступов и прохождение порталов; в продакшн-сборку не входит.
-`tools/shot.ts` / `tools/spidershot.ts` рисуют кадры в PNG (нужен
-`npm i -D @napi-rs/canvas` в отдельной папке) — удобно смотреть дизайн без браузера.
+`tools/shot.ts` / `tools/spidershot.ts` рисуют кадры в PNG, `tools/e2e.ts` монтирует
+настоящее React-приложение в jsdom (оба варианта требуют
+`npm i @napi-rs/canvas jsdom` в отдельной папке и симлинк `tools/node_modules`).
+Фон (три слоя силуэтов города) запекается в offscreen-канвасы и переносится
+`drawImage`, поэтому на кадр остаётся ~50 вызовов вместо нескольких тысяч.

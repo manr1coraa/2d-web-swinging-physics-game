@@ -2,7 +2,7 @@
 import { installDom, rafQueue } from "./headless";
 const canvas = installDom();
 import { Game, LEVEL_METERS, MAX_LEVELS } from "../src/game/engine";
-import { World, themeForLevel, GATE_SPACING } from "../src/game/world";
+import { World, themeForLevel, worldOfLevel, LEVELS_PER_WORLD, GATE_SPACING } from "../src/game/world";
 
 let pass = 0;
 let fail = 0;
@@ -92,7 +92,7 @@ function frames(g: Game, n: number, t0 = { t: 0 }) {
 
 /* ---------- 2. burning roofs kill ---------- */
 {
-  const g = newGame(5); // volcano rim — burning roofs live here
+  const g = newGame(25); // volcano rims live in world 6, so flames must show up here
   g.world.ensure(14000);
   let fire: { x: number; y: number; w: number; h: number } | null = null;
   for (let x = 0; x < 14000 && !fire; x += 240) {
@@ -207,6 +207,14 @@ function frames(g: Game, n: number, t0 = { t: 0 }) {
   ok("40 levels are configured", MAX_LEVELS === 40, `levels=${MAX_LEVELS}`);
   const themes = new Set(Array.from({ length: MAX_LEVELS }, (_, i) => themeForLevel(i)));
   ok("8 distinct worlds cycle through the levels", themes.size === 8, [...themes].join(", "));
+  ok(
+    "each world keeps one theme for all five stretches",
+    themeForLevel(25) === themeForLevel(25 + LEVELS_PER_WORLD - 1) &&
+      themeForLevel(25) !== themeForLevel(25 - 1) &&
+      worldOfLevel(25) === 5 &&
+      worldOfLevel(24) === 4,
+    `w5=${themeForLevel(25)} w6=${themeForLevel(30)}`,
+  );
   ok("one level is 250 m", LEVEL_METERS === 250);
 }
 

@@ -6,6 +6,8 @@ import { clamp, lerp, hash, noise1, wrap } from "./util";
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
+  private haloGrad: CanvasGradient | null = null;
+  private lampGrad: CanvasGradient | null = null;
 
   constructor(public canvas: HTMLCanvasElement) {
     const c = canvas.getContext("2d");
@@ -308,61 +310,101 @@ export class Renderer {
     }
   }
 
-  /** parallax Manhattan skylines */
-  private skyline(g: Game, w: number, h: number, T: Theme) {
-    const { ctx } = this;
-    const layers = [
-      { par: 0.07, base: 0.74, hMin: 90, hMax: 300, col: T.far1, win: 0.1, step: 54, seed: 1 },
-      { par: 0.16, base: 0.82, hMin: 110, hMax: 360, col: T.far2, win: 0.16, step: 68, seed: 2 },
-      { par: 0.3, base: 0.92, hMin: 130, hMax: 420, col: T.far3, win: 0.22, step: 86, seed: 3 },
+  /* ---- parallax skylines, baked into offscreen tiles ----
+     Drawing a few thousand window rects every frame was by far the heaviest
+     part of the render. The three layers are static art, so each one is baked
+     once per viewport size and then blitted with wrapping. Rooftop aircraft
+     lights stay live on top of the tiles. */
+  private tiles: {
+    canvas: HTMLCanvasElement;
+    w: number;
+    lights: { x: number; y: number; ph: number }[];
+    par: number;
+    base: number;
+    step: number;
+  }[] = [];
+  private tileCacheKey = "";
+
+  private buildTiles(w: number, h: number, T: Theme) {
+    const LAYERS = [
+      { par: 0.07, base: 0.74, hMin: 90, hMax: 300, win: 0.1, step: 54, seed: 1 },
+      { par: 0.16, base: 0.82, hMin: 110, hMax: 360, win: 0.16, step: 68, seed: 2 },
+      { par: 0.3, base: 0.92, hMin: 130, hMax: 420, win: 0.22, step: 86, seed: 3 },
     ];
-    const warmWin = T.glass === "warm" ? "#ffd79a" : T.glass === "green" ? "#d6ff9a" : T.glass === "neon" ? "#ff8ae8" : "#8fd4ff";
+    const cols = [T.far1, T.far2, T.far3];
+    const warmWin =
+      T.glass === "warm" ? "#ffd79a" : T.glass === "green" ? "#d6ff9a" : T.glass === "neon" ? "#ff8ae8" : "#8fd4ff";
     const coolWin = T.glass === "ice" ? "#bff4ff" : T.glass === "void" ? "#c3b0ff" : "#8fd4ff";
-    for (const L of layers) {
-      const off = g.cam.x * L.par;
-      const i0 = Math.floor(off / L.step) - 1;
-      const i1 = i0 + Math.ceil(w / L.step) + 3;
-      for (let i = i0; i <= i1; i++) {
-        const r = hash(i * 9.17 + L.seed * 31.7);
-        const r2 = hash(i * 4.31 + L.seed * 13.1);
-        const bw = L.step * (0.68 + r2 * 0.3);
-        const bh = L.hMin + r * (L.hMax - L.hMin);
-        const bx = i * L.step - off;
-        const by = h * L.base - bh;
-        ctx.fillStyle = L.col;
-        ctx.fillRect(bx, by, bw, bh + 40);
-        // rooftop crown
-        if (r > 0.72) {
-          ctx.fillRect(bx + bw * 0.4, by - 16 - r2 * 22, 3.5, 16 + r2 * 22);
-          ctx.fillStyle = "#ff6b81";
-          ctx.globalAlpha = 0.4 + 0.5 * Math.sin(g.time * 3 + i);
-          ctx.fillRect(bx + bw * 0.4 - 1.2, by - 19 - r2 * 22, 6, 4);
-          ctx.globalAlpha = 1;
-          ctx.fillStyle = L.col;
-        }
-        // windows — two flat passes keep the state changes cheap
-        const cols = Math.max(1, Math.floor(bw / 13));
-        const rows = Math.min(16, Math.max(1, Math.floor(bh / 17)));
-        for (let pass = 0; pass < 2; pass++) {
-          ctx.fillStyle = pass === 0 ? warmWin : coolWin;
-          ctx.globalAlpha = pass === 0 ? 0.6 : 0.45;
-          for (let cx = 0; cx < cols; cx++) {
-            for (let cy = 0; cy < rows; cy++) {
-              const wr = hash(i * 77.7 + cx * 13.3 + cy * 5.7 + L.seed);
-              if (wr > L.win) continue;
-              const warm = wr > L.win * 0.55;
-              if ((pass === 0) !== warm) continue;
-              ctx.fillRect(bx + 5 + cx * 13, by + 7 + cy * 17, 5, 7);
+    const key = `${w}x${h}:${T.id}`;
+    if (key === this.tileCacheKey) return;
+    this.tileCacheKey = key;
+    this.tiles = LAYERS.map((L, li) => {
+      const k = Math.max(4, Math.ceil(1100 / L.step));
+      const tw = k * L.step;
+      const cv = document.createElement("canvas");
+      cv.width = tw;
+      cv.height = h;
+      const c2 = cv.getContext("2d") as CanvasRenderingContext2D | null;
+      const lights: { x: number; y: number; ph: number }[] = [];
+      if (c2) {
+        c2.fillStyle = cols[li];
+        for (let i = 0; i < k; i++) {
+          c2.globalAlpha = 1;
+          // the pattern is generated from the tile index so it wraps seamlessly
+          const r = hash(i * 9.17 + L.seed * 31.7);
+          const r2 = hash(i * 4.31 + L.seed * 13.1);
+          const bw = L.step * (0.68 + r2 * 0.3);
+          const bh = L.hMin + r * (L.hMax - L.hMin);
+          const bx = i * L.step;
+          const by = h * L.base - bh;
+          c2.fillStyle = cols[li];
+          c2.fillRect(bx, by, bw, bh + 40);
+          if (r > 0.72) {
+            c2.fillRect(bx + bw * 0.4, by - 16 - r2 * 22, 3.5, 16 + r2 * 22);
+            lights.push({ x: bx + bw * 0.4, y: by - 19 - r2 * 22, ph: i });
+          }
+          const colsN = Math.max(1, Math.floor(bw / 13));
+          const rows = Math.min(16, Math.max(1, Math.floor(bh / 17)));
+          for (let pass = 0; pass < 2; pass++) {
+            c2.fillStyle = pass === 0 ? warmWin : coolWin;
+            c2.globalAlpha = pass === 0 ? 0.6 : 0.45;
+            for (let cx = 0; cx < colsN; cx++) {
+              for (let cy = 0; cy < rows; cy++) {
+                const wr = hash(i * 77.7 + cx * 13.3 + cy * 5.7 + L.seed);
+                if (wr > L.win) continue;
+                const warm = wr > L.win * 0.55;
+                if ((pass === 0) !== warm) continue;
+                c2.fillRect(bx + 5 + cx * 13, by + 7 + cy * 17, 5, 7);
+              }
             }
           }
         }
-        ctx.globalAlpha = 1;
+        c2.globalAlpha = 1;
+      }
+      return { canvas: cv, w: tw, lights, par: L.par, base: L.base, step: L.step };
+    });
+  }
+
+  private skyline(g: Game, w: number, h: number, T: Theme) {
+    const { ctx } = this;
+    this.buildTiles(w, h, T);
+    for (const tile of this.tiles) {
+      const off = g.cam.x * tile.par;
+      const start = -(((off % tile.w) + tile.w) % tile.w);
+      for (let x = start; x < w; x += tile.w) {
+        ctx.drawImage(tile.canvas, x, 0);
+        for (const L of tile.lights) {
+          ctx.globalAlpha = 0.3 + 0.5 * Math.abs(Math.sin(g.time * 3 + L.ph));
+          ctx.fillStyle = "#ff6b81";
+          ctx.fillRect(x + L.x - 1.2, L.y, 6, 4);
+        }
       }
     }
+    ctx.globalAlpha = 1;
     // low haze over the far skyline
     const hz = ctx.createLinearGradient(0, h * 0.6, 0, h);
-    hz.addColorStop(0, "rgba(0,0,0,0)");
-    hz.addColorStop(1, T.glow);
+    hz.addColorStop(0, "rgba(40,30,70,0)");
+    hz.addColorStop(1, "rgba(60,36,80,0.5)");
     ctx.fillStyle = hz;
     ctx.fillRect(0, h * 0.6, w, h * 0.4);
   }
@@ -581,13 +623,18 @@ export class Renderer {
       ctx.lineTo(x, sy - 44);
       ctx.lineTo(x + 14, sy - 50);
       ctx.stroke();
-      const lampG = ctx.createRadialGradient(x + 16, sy - 50, 2, x + 16, sy - 50, 54);
-      lampG.addColorStop(0, "rgba(255,196,120,0.5)");
-      lampG.addColorStop(1, "rgba(255,196,120,0)");
-      ctx.fillStyle = lampG;
+      if (!this.lampGrad) {
+        this.lampGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, 54);
+        this.lampGrad.addColorStop(0, "rgba(255,196,120,0.5)");
+        this.lampGrad.addColorStop(1, "rgba(255,196,120,0)");
+      }
+      ctx.save();
+      ctx.translate(x + 16, sy - 50);
+      ctx.fillStyle = this.lampGrad;
       ctx.beginPath();
-      ctx.arc(x + 16, sy - 50, 54, 0, Math.PI * 2);
+      ctx.arc(0, 0, 54, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
       ctx.fillStyle = T.groundLine;
       ctx.beginPath();
       ctx.arc(x + 16, sy - 50, 3.4, 0, Math.PI * 2);
@@ -1523,14 +1570,19 @@ export class Renderer {
     }
 
     // soft contact shadow — keeps the spider readable over any backdrop
-    const halo = ctx.createRadialGradient(p.x, p.y, 6, p.x, p.y, 30);
-    halo.addColorStop(0, "rgba(5,7,15,0.55)");
-    halo.addColorStop(0.6, "rgba(5,7,15,0.3)");
-    halo.addColorStop(1, "rgba(5,7,15,0)");
-    ctx.fillStyle = halo;
+    if (!this.haloGrad) {
+      this.haloGrad = ctx.createRadialGradient(0, 0, 6, 0, 0, 30);
+      this.haloGrad.addColorStop(0, "rgba(5,7,15,0.55)");
+      this.haloGrad.addColorStop(0.6, "rgba(5,7,15,0.3)");
+      this.haloGrad.addColorStop(1, "rgba(5,7,15,0)");
+    }
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.fillStyle = this.haloGrad;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 30, 0, Math.PI * 2);
+    ctx.arc(0, 0, 30, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
 
     ctx.save();
     ctx.translate(p.x, p.y);

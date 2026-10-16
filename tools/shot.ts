@@ -6,7 +6,7 @@ import { botStep, newBot } from "./bot";
 import { themeForLevel } from "../src/game/world";
 import { writeFileSync, mkdirSync } from "node:fs";
 
-installDom();
+installDom((w, h) => createCanvas(w, h));
 const W = 1280;
 const H = 760;
 mkdirSync("/tmp/shots", { recursive: true });
@@ -77,12 +77,16 @@ function shoot(level: number, mode: Mode, seconds: number, name: string) {
 }
 
 shoot(0, "menu", 4, "00-menu");
-shoot(0, "play", 7, "01-city");
-shoot(1, "play", 6, "02-jungle");
-shoot(2, "play", 6, "03-underwater");
-shoot(3, "play", 6, "04-desert");
-shoot(4, "play", 6, "05-ice");
-shoot(5, "play", 6, "06-volcano");
-shoot(6, "play", 6, "07-space");
-shoot(7, "play", 6, "08-neon");
+// one level per world: with LEVELS_PER_WORLD=5 each world shares a single theme
+const WORLDS: [number, string][] = [
+  [0, "city"],
+  [5, "jungle"],
+  [10, "underwater"],
+  [15, "desert"],
+  [20, "ice"],
+  [25, "volcano"],
+  [30, "space"],
+  [35, "neon"],
+];
+WORLDS.forEach(([lv, name], i) => shoot(lv, "play", 6, `${String(i + 1).padStart(2, "0")}-${name}`));
 shoot(0, "gate", 30, "09-gate");

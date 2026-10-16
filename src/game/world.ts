@@ -21,8 +21,16 @@ export const THEMES: ThemeId[] = [
   "neon",
 ];
 
+/** every world is five stretches of the same place */
+export const LEVELS_PER_WORLD = 5;
+
+export function worldOfLevel(i: number): number {
+  return Math.floor(Math.max(0, i) / LEVELS_PER_WORLD);
+}
+
+/** the world's theme — and it lasts all five stretches */
 export function themeForLevel(i: number): ThemeId {
-  return THEMES[i % THEMES.length];
+  return THEMES[worldOfLevel(i) % THEMES.length];
 }
 
 export type Obj =

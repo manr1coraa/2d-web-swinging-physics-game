@@ -3,7 +3,7 @@ import { createCanvas } from "@napi-rs/canvas";
 import { Game } from "../src/game/engine";
 import { botStep, newBot } from "./bot";
 import { writeFileSync } from "node:fs";
-installDom();
+installDom((w, h) => createCanvas(w, h));
 
 const W = 440;
 const H = 330; // small viewport = zoomed-in look, so the character is legible
