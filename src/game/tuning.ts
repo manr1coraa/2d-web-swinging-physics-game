@@ -55,12 +55,14 @@ export const tuning = {
   glideRefill: 0.6,
 
   // ---- camera -----------------------------------------------------------
-  /** camera follow stiffness (higher = tighter) */
+  /** camera spring stiffness (natural frequency, rad/s), horizontal */
   camFollow: 7,
-  /** camera vertical follow stiffness */
+  /** camera spring stiffness, vertical. The spring is critically damped. */
   camFollowY: 4.2,
   /** how far the camera leads along the velocity, px per px/s */
   camLead: 0.22,
+  /** zoom-out at top speed: 0 = none, 0.22 = view shrinks to 78% */
+  camZoomOut: 0.22,
 
   // ---- scoring ----------------------------------------------------------
   /** px per metre on the distance counter */
@@ -89,6 +91,9 @@ export const tuningRanges: [keyof typeof tuning, number, number, number, string]
   ["glideFuel", 0.2, 4, 0.05, "glide fuel s"],
   ["glideRefill", 0, 2, 0.05, "glide refill /s"],
   ["camFollow", 1, 20, 0.5, "camera follow"],
+  ["camFollowY", 1, 20, 0.5, "camera follow y"],
+  ["camLead", 0, 0.5, 0.01, "camera lead"],
+  ["camZoomOut", 0, 0.4, 0.01, "camera zoom-out"],
 ];
 
 /** Restore every value to the committed default. */

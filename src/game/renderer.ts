@@ -28,6 +28,10 @@ export class Renderer {
     ctx.fillRect(0, 0, w, h);
 
     ctx.save();
+    // zoom about the screen centre, then follow the camera
+    ctx.translate(w / 2, h / 2);
+    ctx.scale(g.cam.zoom, g.cam.zoom);
+    ctx.translate(-w / 2, -h / 2);
     ctx.translate(-g.cam.x + g.cam.sx, -g.cam.y + g.cam.sy);
     this.street(g);
     this.worldObjects(g);

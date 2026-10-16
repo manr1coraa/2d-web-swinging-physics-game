@@ -130,7 +130,7 @@ export class Game {
   vw = 0;
   vh = 0;
   dpr = 1;
-  cam = { x: -200, y: 0, sx: 0, sy: 0 };
+  cam = { x: -200, y: 0, sx: 0, sy: 0, vx: 0, vy: 0, zoom: 1 };
   trauma = 0;
 
   firstClick = false;
@@ -251,6 +251,9 @@ export class Game {
     this.player.syncRender();
     this.cam.x = this.player.rx - this.vw * 0.4;
     this.cam.y = this.player.ry - this.vh * 0.52;
+    this.cam.vx = 0;
+    this.cam.vy = 0;
+    this.cam.zoom = 1;
     this.state = "playing";
     this.sfx.ensure();
     this.sfx.start();
@@ -582,6 +585,7 @@ export class Game {
       this.cam.x += dt * 46;
       this.world.ensure(this.cam.x + this.vw);
       this.cam.y = lerp(this.cam.y, 30, 1 - Math.exp(-dt * 2));
+      this.cam.zoom = lerp(this.cam.zoom, 1, 1 - Math.exp(-dt * 2));
       this.updateShake(dt);
       return;
     }
@@ -654,16 +658,7 @@ export class Game {
       if (this.coinChainT <= 0) this.coinChain = 0;
     }
 
-    // camera: smooth follow, leads along the velocity
-    const lk = clamp(p.vx * T.camLead, -30, 260);
-    const tx = p.rx - this.vw * 0.4 + lk;
-    const ty = p.ry - this.vh * 0.52 + clamp(p.vy * 0.08, -70, 90);
-    this.cam.x = lerp(this.cam.x, tx, 1 - Math.exp(-dt * T.camFollow));
-    this.cam.y = lerp(
-      this.cam.y,
-      clamp(ty, -280, 440),
-      1 - Math.exp(-dt * T.camFollowY),
-    );
+    this.updateCamera(dt, p);
     this.updateShake(dt);
     this.world.ensure(p.rx + this.vw);
 
@@ -698,6 +693,39 @@ export class Game {
     this.sfx.setWind(sp / vmax);
     this.sfx.padLevel(sp / vmax);
     this.emit();
+  }
+
+  /**
+   * Camera: a critically damped spring follows a target that leads the
+   * spider. The view zooms out smoothly as speed rises, so fast flight stays
+   * readable without the image jumping.
+   */
+  private updateCamera(dt: number, p: Player) {
+    const cam = this.cam;
+    const lk = clamp(p.vx * T.camLead, -30, 260);
+    const tx = p.rx - this.vw * 0.4 + lk;
+    const ty = clamp(
+      p.ry - this.vh * 0.52 + clamp(p.vy * 0.08, -70, 90),
+      -280,
+      440,
+    );
+    const step = (
+      pos: number,
+      vel: number,
+      target: number,
+      w: number,
+    ): [number, number] => {
+      // x'' = w²(target − x) − 2w·x'  (critical damping, no overshoot)
+      const h = Math.min(dt, 1 / 30);
+      const a = w * w * (target - pos) - 2 * w * vel;
+      const nv = vel + a * h;
+      return [pos + nv * h, nv];
+    };
+    [cam.x, cam.vx] = step(cam.x, cam.vx, tx, T.camFollow);
+    [cam.y, cam.vy] = step(cam.y, cam.vy, ty, T.camFollowY);
+    const f = clamp(p.speed() / this.softMax(), 0, 1);
+    const zTarget = 1 - T.camZoomOut * f * f;
+    cam.zoom = lerp(cam.zoom, zTarget, 1 - Math.exp(-dt * 2));
   }
 
   /** soft speed ceiling in px/s, scaled to the screen width */
