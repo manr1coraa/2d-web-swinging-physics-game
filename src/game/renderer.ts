@@ -1,12 +1,13 @@
 import type { Game } from "./engine";
 import type { Obj } from "./world";
+import { themeDef, type Theme } from "./themes";
 import { clamp, lerp, hash, noise1, wrap } from "./util";
 
-const CONCRETE = "#0b1024";
-const TRIM = "#49d8ff";
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
+  private haloGrad: CanvasGradient | null = null;
+  private lampGrad: CanvasGradient | null = null;
 
   constructor(public canvas: HTMLCanvasElement) {
     const c = canvas.getContext("2d");
@@ -20,18 +21,20 @@ export class Renderer {
     const h = g.vh;
     ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
 
-    this.sky(w, h);
-    this.stars(g, w, h);
-    this.skyline(g, w, h);
+    const T = themeDef(g.theme);
+    this.sky(g, w, h, T);
+    this.deco(g, w, h, T);
+    this.skyline(g, w, h, T);
     // push the background back so gameplay objects pop forward
     ctx.fillStyle = "rgba(6,8,26,0.42)";
     ctx.fillRect(0, 0, w, h);
 
     ctx.save();
     ctx.translate(-g.cam.x + g.cam.sx, -g.cam.y + g.cam.sy);
-    this.street(g);
-    this.worldObjects(g);
-    this.upperCity(g);
+    this.street(g, T);
+    this.gate(g, T);
+    this.worldObjects(g, T);
+    this.upperCity(g, T);
     g.parts.draw(ctx);
     if (g.state !== "menu") {
       this.trail(g);
@@ -43,8 +46,9 @@ export class Renderer {
     this.snapMark(g);
     ctx.restore();
 
-    this.speedLines(g);
+    this.speedLines(g, T);
     this.dangerArrows(g);
+    this.ambient(g, T);
   }
 
   /** red chevrons at the screen edge for hazards about to arrive */
@@ -54,7 +58,15 @@ export class Renderer {
     const p = g.player;
     const seen: { y: number; d: number }[] = [];
     g.world.eachNear(p.x + 420, (o) => {
-      if (o.kind !== "stal" && o.kind !== "saw" && o.kind !== "spire") return;
+      if (
+        o.kind !== "stal" &&
+        o.kind !== "saw" &&
+        o.kind !== "spire" &&
+        o.kind !== "fire" &&
+        o.kind !== "drone" &&
+        o.kind !== "fish"
+      )
+        return;
       const dx = o.x - p.x;
       if (dx < 40 || dx > 900) return;
       const oy =
@@ -62,7 +74,9 @@ export class Renderer {
           ? o.y + o.len * 0.6
           : o.kind === "spire"
             ? o.tip + 40
-            : o.y;
+            : o.kind === "fire"
+              ? o.y + o.h
+              : o.y;
       const scrX = o.x - g.cam.x;
       if (scrX < g.vw - 140) return; // only warn for off/near-edge hazards
       seen.push({ y: oy - g.cam.y, d: dx });
@@ -92,118 +106,301 @@ export class Renderer {
 
   /* ---------------- background ---------------- */
 
-  private sky(w: number, h: number) {
+  private sky(g: Game, w: number, h: number, T: Theme) {
     const { ctx } = this;
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "#070b22");
-    grad.addColorStop(0.42, "#121a3e");
-    grad.addColorStop(0.72, "#2b2254");
-    grad.addColorStop(1, "#5c3161");
+    grad.addColorStop(0, T.sky[0]);
+    grad.addColorStop(0.42, T.sky[1]);
+    grad.addColorStop(0.72, T.sky[2]);
+    grad.addColorStop(1, T.sky[3]);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
-    // city light pollution glow on the horizon
+    // light pollution / bioluminescent glow on the horizon
     const gg = ctx.createLinearGradient(0, h * 0.55, 0, h);
-    gg.addColorStop(0, "rgba(255,150,90,0)");
-    gg.addColorStop(1, "rgba(255,150,90,0.22)");
+    gg.addColorStop(0, "rgba(0,0,0,0)");
+    gg.addColorStop(1, T.glow);
     ctx.fillStyle = gg;
     ctx.fillRect(0, h * 0.55, w, h * 0.45);
 
-    // moon
+    // the big body in the sky
+    if (T.orb === "none") {
+      this.starsField(g, w, h, T);
+      return;
+    }
     const mx = w * 0.78;
-    const my = h * 0.15;
+    const my = h * 0.15 + Math.sin(g.cam.y * 0.0004) * 8;
+    const col =
+      T.orb === "moon" ? "#eaf0ff" : T.orb === "sun" ? "#ffe9a8" : T.orb === "sun2" ? "#ffd08a" : "#ff9d5c";
     const mg = ctx.createRadialGradient(mx, my, 8, mx, my, 190);
-    mg.addColorStop(0, "rgba(180,200,255,0.22)");
-    mg.addColorStop(1, "rgba(180,200,255,0)");
+    mg.addColorStop(0, T.orb === "eclipse" ? "rgba(255,120,60,0.35)" : "rgba(200,220,255,0.22)");
+    mg.addColorStop(1, "rgba(200,220,255,0)");
     ctx.fillStyle = mg;
     ctx.fillRect(mx - 200, my - 200, 400, 400);
-    ctx.fillStyle = "#eaf0ff";
-    ctx.beginPath();
-    ctx.arc(mx, my, 24, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 0.22;
-    ctx.fillStyle = "#9fb2e8";
-    ctx.beginPath();
-    ctx.arc(mx - 7, my - 4, 5.5, 0, Math.PI * 2);
-    ctx.arc(mx + 6, my + 8, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
+    if (T.orb === "eclipse") {
+      ctx.fillStyle = "rgba(255,140,70,0.85)";
+      ctx.beginPath();
+      ctx.arc(mx, my, 34, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#170609";
+      ctx.beginPath();
+      ctx.arc(mx - 9, my - 3, 30, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(mx, my, T.orb === "sun" || T.orb === "sun2" ? 40 : 24, 0, Math.PI * 2);
+      ctx.fill();
+      if (T.orb === "moon") {
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = "#9fb2e8";
+        ctx.beginPath();
+        ctx.arc(mx - 7, my - 4, 5.5, 0, Math.PI * 2);
+        ctx.arc(mx + 6, my + 8, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+    this.starsField(g, w, h, T, T.orb === "sun" ? 0.25 : 1);
   }
 
-  private stars(g: Game, w: number, h: number) {
+  /** twinkling star field / drifting plankton */
+  private starsField(g: Game, w: number, h: number, T: Theme, alpha = 1) {
     const { ctx } = this;
-    for (let i = 0; i < 70; i++) {
+    const n = T.ambient === "stars" ? 110 : 70;
+    for (let i = 0; i < n; i++) {
       const sx = wrap(hash(i * 3.17) * 2200 - g.cam.x * 0.04, w + 40) - 20;
       const sy = hash(i * 7.71 + 1.3) * h * 0.4;
-      const tw =
-        0.25 + 0.6 * Math.abs(Math.sin(g.time * (0.6 + hash(i) * 1.4) + i));
-      ctx.globalAlpha = tw * (0.25 + hash(i + 9) * 0.6);
-      ctx.fillStyle = "#dbe5ff";
+      const tw = 0.25 + 0.6 * Math.abs(Math.sin(g.time * (0.6 + hash(i) * 1.4) + i));
+      ctx.globalAlpha = tw * (0.25 + hash(i + 9) * 0.6) * alpha;
+      ctx.fillStyle = T.ambient === "bubbles" ? "#bff4ff" : "#dbe5ff";
       ctx.fillRect(sx, sy, hash(i * 1.7) > 0.85 ? 2 : 1.2, 1.4);
     }
     ctx.globalAlpha = 1;
 
-    // blinking aircraft crossing the sky
-    const planeT = (g.time * 0.045) % 1;
-    const px = w + 60 - planeT * (w + 160);
-    const py = h * 0.12 + Math.sin(planeT * 3) * 10;
-    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(g.time * 7);
-    ctx.fillStyle = "#ff6b81";
-    ctx.beginPath();
-    ctx.arc(px, py, 1.9, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
+    if (T.id === "space" || T.id === "neon") {
+      // drifting planet / hovering ad blimp
+      const bx = w * 0.22 + Math.sin(g.time * 0.06) * 30;
+      const by = h * 0.2 + Math.cos(g.time * 0.05) * 14;
+      if (T.id === "space") {
+        const pg = ctx.createRadialGradient(bx, by, 6, bx, by, 70);
+        pg.addColorStop(0, "rgba(200,170,255,0.5)");
+        pg.addColorStop(1, "rgba(120,80,255,0)");
+        ctx.fillStyle = pg;
+        ctx.beginPath();
+        ctx.arc(bx, by, 70, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#6a49c9";
+        ctx.beginPath();
+        ctx.arc(bx, by, 26, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(220,190,255,0.6)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(bx, by, 42, 10, -0.4, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        this.rrect(bx - 34, by - 13, 68, 26, 12);
+        ctx.fillStyle = "rgba(30,6,44,0.85)";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,90,214,0.7)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = `rgba(255,120,230,${(0.5 + 0.5 * Math.sin(g.time * 3)).toFixed(2)})`;
+        ctx.font = '800 12px "Baloo 2", sans-serif';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("SWING", bx, by);
+        ctx.textAlign = "start";
+        ctx.textBaseline = "alphabetic";
+      }
+    }
+
+    if (T.id !== "space" && T.id !== "underwater") {
+      // blinking aircraft crossing the sky
+      const planeT = (g.time * 0.045) % 1;
+      const px = w + 60 - planeT * (w + 160);
+      const py = h * 0.12 + Math.sin(planeT * 3) * 10;
+      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(g.time * 7);
+      ctx.fillStyle = "#ff6b81";
+      ctx.beginPath();
+      ctx.arc(px, py, 1.9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
   }
 
-  /** parallax Manhattan skylines */
-  private skyline(g: Game, w: number, h: number) {
+  /** theme-flavoured horizon decor: cacti, pines, lava rocks, kelp, billboards */
+  private deco(g: Game, w: number, h: number, T: Theme) {
     const { ctx } = this;
-    const layers = [
-      { par: 0.07, base: 0.74, hMin: 90, hMax: 300, col: "#121735", win: 0.1, step: 54, seed: 1 },
-      { par: 0.16, base: 0.82, hMin: 110, hMax: 360, col: "#19204a", win: 0.16, step: 68, seed: 2 },
-      { par: 0.3, base: 0.92, hMin: 130, hMax: 420, col: "#232a63", win: 0.22, step: 86, seed: 3 },
-    ];
-    for (const L of layers) {
-      const off = g.cam.x * L.par;
-      const i0 = Math.floor(off / L.step) - 1;
-      const i1 = i0 + Math.ceil(w / L.step) + 3;
-      for (let i = i0; i <= i1; i++) {
-        const r = hash(i * 9.17 + L.seed * 31.7);
-        const r2 = hash(i * 4.31 + L.seed * 13.1);
-        const bw = L.step * (0.68 + r2 * 0.3);
-        const bh = L.hMin + r * (L.hMax - L.hMin);
-        const bx = i * L.step - off;
-        const by = h * L.base - bh;
-        ctx.fillStyle = L.col;
-        ctx.fillRect(bx, by, bw, bh + 40);
-        // rooftop crown
-        if (r > 0.72) {
-          ctx.fillRect(bx + bw * 0.4, by - 16 - r2 * 22, 3.5, 16 + r2 * 22);
-          ctx.fillStyle = "#ff6b81";
-          ctx.globalAlpha = 0.4 + 0.5 * Math.sin(g.time * 3 + i);
-          ctx.fillRect(bx + bw * 0.4 - 1.2, by - 19 - r2 * 22, 6, 4);
-          ctx.globalAlpha = 1;
-          ctx.fillStyle = L.col;
+    if (T.deco === "skyline" || T.deco === "planets") return;
+    const par = 0.34;
+    const step = 150;
+    const off = g.cam.x * par;
+    const base = h * 0.94;
+    const i0 = Math.floor(off / step) - 1;
+    const i1 = i0 + Math.ceil(w / step) + 2;
+    for (let i = i0; i <= i1; i++) {
+      const x = i * step - off;
+      const r = hash(i * 5.11 + 3.3);
+      const r2 = hash(i * 2.77 + 8.1);
+      const scale = 0.7 + r * 0.6;
+      if (T.deco === "cacti") {
+        ctx.strokeStyle = "rgba(40,70,40,0.9)";
+        ctx.lineWidth = 9 * scale;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(x, base);
+        ctx.lineTo(x, base - 70 * scale);
+        ctx.moveTo(x, base - 40 * scale);
+        ctx.lineTo(x + 24 * scale, base - 58 * scale);
+        ctx.stroke();
+      } else if (T.deco === "pines") {
+        ctx.fillStyle = "rgba(12,40,48,0.9)";
+        const ph = 110 * scale;
+        ctx.beginPath();
+        ctx.moveTo(x - 26 * scale, base);
+        ctx.lineTo(x, base - ph);
+        ctx.lineTo(x + 26 * scale, base);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "rgba(120,220,230,0.35)";
+        ctx.beginPath();
+        ctx.moveTo(x - 12 * scale, base - ph * 0.45);
+        ctx.lineTo(x, base - ph);
+        ctx.lineTo(x + 3 * scale, base - ph * 0.45);
+        ctx.closePath();
+        ctx.fill();
+      } else if (T.deco === "lavarocks") {
+        ctx.fillStyle = "rgba(28,8,10,0.95)";
+        ctx.beginPath();
+        ctx.moveTo(x - 40 * scale, base);
+        ctx.lineTo(x - 12 * scale, base - 66 * scale);
+        ctx.lineTo(x + 16 * scale, base - 44 * scale);
+        ctx.lineTo(x + 44 * scale, base);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,110,50,0.5)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - 12 * scale, base - 66 * scale);
+        ctx.lineTo(x + 2 * scale, base - 20 * scale);
+        ctx.stroke();
+      } else if (T.deco === "kelp") {
+        ctx.strokeStyle = `rgba(80,${180 + Math.floor(r * 60)},${140 + Math.floor(r2 * 60)},0.55)`;
+        ctx.lineWidth = 7 * scale;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(x, base);
+        for (let k = 1; k <= 4; k++) {
+          const sway = Math.sin(g.time * 0.9 + i + k * 0.7) * 12;
+          ctx.lineTo(x + sway, base - k * 34 * scale);
         }
-        // windows — two flat passes keep the state changes cheap
-        const cols = Math.max(1, Math.floor(bw / 13));
-        const rows = Math.min(16, Math.max(1, Math.floor(bh / 17)));
-        for (let pass = 0; pass < 2; pass++) {
-          ctx.fillStyle = pass === 0 ? "#ffd79a" : "#8fd4ff";
-          ctx.globalAlpha = pass === 0 ? 0.6 : 0.45;
-          for (let cx = 0; cx < cols; cx++) {
-            for (let cy = 0; cy < rows; cy++) {
-              const wr = hash(i * 77.7 + cx * 13.3 + cy * 5.7 + L.seed);
-              if (wr > L.win) continue;
-              const warm = wr > L.win * 0.55;
-              if ((pass === 0) !== warm) continue;
-              ctx.fillRect(bx + 5 + cx * 13, by + 7 + cy * 17, 5, 7);
-            }
-          }
-        }
+        ctx.stroke();
+      } else if (T.deco === "billboards") {
+        const bh = 90 * scale;
+        ctx.fillStyle = "rgba(18,4,34,0.9)";
+        ctx.fillRect(x - 28 * scale, base - bh, 56 * scale, bh * 0.7);
+        ctx.strokeStyle = `rgba(255,${Math.floor(90 + r * 100)},214,0.7)`;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.4 + 0.6 * Math.abs(Math.sin(g.time * 2 + i));
+        ctx.strokeRect(x - 28 * scale, base - bh, 56 * scale, bh * 0.7);
         ctx.globalAlpha = 1;
       }
     }
+  }
+
+  /* ---- parallax skylines, baked into offscreen tiles ----
+     Drawing a few thousand window rects every frame was by far the heaviest
+     part of the render. The three layers are static art, so each one is baked
+     once per viewport size and then blitted with wrapping. Rooftop aircraft
+     lights stay live on top of the tiles. */
+  private tiles: {
+    canvas: HTMLCanvasElement;
+    w: number;
+    lights: { x: number; y: number; ph: number }[];
+    par: number;
+    base: number;
+    step: number;
+  }[] = [];
+  private tileCacheKey = "";
+
+  private buildTiles(w: number, h: number, T: Theme) {
+    const LAYERS = [
+      { par: 0.07, base: 0.74, hMin: 90, hMax: 300, win: 0.1, step: 54, seed: 1 },
+      { par: 0.16, base: 0.82, hMin: 110, hMax: 360, win: 0.16, step: 68, seed: 2 },
+      { par: 0.3, base: 0.92, hMin: 130, hMax: 420, win: 0.22, step: 86, seed: 3 },
+    ];
+    const cols = [T.far1, T.far2, T.far3];
+    const warmWin =
+      T.glass === "warm" ? "#ffd79a" : T.glass === "green" ? "#d6ff9a" : T.glass === "neon" ? "#ff8ae8" : "#8fd4ff";
+    const coolWin = T.glass === "ice" ? "#bff4ff" : T.glass === "void" ? "#c3b0ff" : "#8fd4ff";
+    const key = `${w}x${h}:${T.id}`;
+    if (key === this.tileCacheKey) return;
+    this.tileCacheKey = key;
+    this.tiles = LAYERS.map((L, li) => {
+      const k = Math.max(4, Math.ceil(1100 / L.step));
+      const tw = k * L.step;
+      const cv = document.createElement("canvas");
+      cv.width = tw;
+      cv.height = h;
+      const c2 = cv.getContext("2d") as CanvasRenderingContext2D | null;
+      const lights: { x: number; y: number; ph: number }[] = [];
+      if (c2) {
+        c2.fillStyle = cols[li];
+        for (let i = 0; i < k; i++) {
+          c2.globalAlpha = 1;
+          // the pattern is generated from the tile index so it wraps seamlessly
+          const r = hash(i * 9.17 + L.seed * 31.7);
+          const r2 = hash(i * 4.31 + L.seed * 13.1);
+          const bw = L.step * (0.68 + r2 * 0.3);
+          const bh = L.hMin + r * (L.hMax - L.hMin);
+          const bx = i * L.step;
+          const by = h * L.base - bh;
+          c2.fillStyle = cols[li];
+          c2.fillRect(bx, by, bw, bh + 40);
+          if (r > 0.72) {
+            c2.fillRect(bx + bw * 0.4, by - 16 - r2 * 22, 3.5, 16 + r2 * 22);
+            lights.push({ x: bx + bw * 0.4, y: by - 19 - r2 * 22, ph: i });
+          }
+          const colsN = Math.max(1, Math.floor(bw / 13));
+          const rows = Math.min(16, Math.max(1, Math.floor(bh / 17)));
+          for (let pass = 0; pass < 2; pass++) {
+            c2.fillStyle = pass === 0 ? warmWin : coolWin;
+            c2.globalAlpha = pass === 0 ? 0.6 : 0.45;
+            for (let cx = 0; cx < colsN; cx++) {
+              for (let cy = 0; cy < rows; cy++) {
+                const wr = hash(i * 77.7 + cx * 13.3 + cy * 5.7 + L.seed);
+                if (wr > L.win) continue;
+                const warm = wr > L.win * 0.55;
+                if ((pass === 0) !== warm) continue;
+                c2.fillRect(bx + 5 + cx * 13, by + 7 + cy * 17, 5, 7);
+              }
+            }
+          }
+        }
+        c2.globalAlpha = 1;
+      }
+      return { canvas: cv, w: tw, lights, par: L.par, base: L.base, step: L.step };
+    });
+  }
+
+  private skyline(g: Game, w: number, h: number, T: Theme) {
+    const { ctx } = this;
+    this.buildTiles(w, h, T);
+    for (const tile of this.tiles) {
+      const off = g.cam.x * tile.par;
+      const start = -(((off % tile.w) + tile.w) % tile.w);
+      for (let x = start; x < w; x += tile.w) {
+        ctx.drawImage(tile.canvas, x, 0);
+        for (const L of tile.lights) {
+          ctx.globalAlpha = 0.3 + 0.5 * Math.abs(Math.sin(g.time * 3 + L.ph));
+          ctx.fillStyle = "#ff6b81";
+          ctx.fillRect(x + L.x - 1.2, L.y, 6, 4);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
     // low haze over the far skyline
     const hz = ctx.createLinearGradient(0, h * 0.6, 0, h);
     hz.addColorStop(0, "rgba(40,30,70,0)");
@@ -214,7 +411,7 @@ export class Renderer {
 
   /* ---------------- upper city (the web-anchor canopy) ---------------- */
 
-  private upperCity(g: Game) {
+  private upperCity(g: Game, T: Theme) {
     const x0 = g.cam.x - 90;
     const x1 = g.cam.x + g.vw + 90;
     const top = g.cam.y - 360;
@@ -224,13 +421,13 @@ export class Renderer {
       const solid = x <= x1 && g.world.ceilSolid(x);
       if (solid && runStart < 0) runStart = x;
       if (!solid && runStart >= 0) {
-        this.cityRun(g, runStart, Math.min(x, x1), top);
+        this.cityRun(g, runStart, Math.min(x, x1), top, T);
         runStart = -1;
       }
     }
   }
 
-  private cityRun(g: Game, xa: number, xb: number, top: number) {
+  private cityRun(g: Game, xa: number, xb: number, top: number, T: Theme) {
     const { ctx } = this;
     const w = g.world;
     const edge = (x: number) => w.ceilY(x);
@@ -243,8 +440,37 @@ export class Renderer {
     ctx.lineTo(xb, edge(xb));
     ctx.lineTo(xb, top);
     ctx.closePath();
-    ctx.fillStyle = CONCRETE;
+    ctx.fillStyle = T.ceiling;
     ctx.fill();
+
+    // canopy foliage / ice crystals / coral on the underside for organic themes
+    if (T.deco === "kelp" || T.spike === "vine" || T.spike === "coral") {
+      for (let x = Math.ceil(xa / 46) * 46; x < xb; x += 46) {
+        const ey = edge(x);
+        const r = hash(x * 0.77);
+        const len = 12 + r * 26;
+        ctx.strokeStyle =
+          T.spike === "coral" ? "rgba(90,230,220,0.45)" : "rgba(80,190,90,0.5)";
+        ctx.lineWidth = 3.4;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(x, ey);
+        ctx.quadraticCurveTo(x + 6, ey + len * 0.6, x + (r - 0.5) * 10, ey + len);
+        ctx.stroke();
+      }
+    } else if (T.spike === "ice") {
+      for (let x = Math.ceil(xa / 52) * 52; x < xb; x += 52) {
+        const ey = edge(x);
+        const r = hash(x * 0.61);
+        ctx.fillStyle = "rgba(180,240,255,0.5)";
+        ctx.beginPath();
+        ctx.moveTo(x - 6, ey);
+        ctx.lineTo(x, ey + 10 + r * 14);
+        ctx.lineTo(x + 6, ey);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
 
     // lit windows on the facade above the ledge
     const cs = 26;
@@ -258,7 +484,26 @@ export class Renderer {
         if (wr > 0.46) continue;
         const flick = hash(Math.floor(g.time * 0.5) + x * 0.11 + row) > 0.03;
         if (!flick) continue;
-        ctx.fillStyle = wr > 0.26 ? "#ffd79a" : "#7fe0ff";
+        ctx.fillStyle =
+          T.glass === "warm"
+            ? wr > 0.26
+              ? "#ffd79a"
+              : "#7fe0ff"
+            : T.glass === "green"
+              ? wr > 0.26
+                ? "#d8ff9a"
+                : "#8fffd8"
+              : T.glass === "neon"
+                ? wr > 0.26
+                  ? "#ff8ae8"
+                  : "#8fd8ff"
+                : T.glass === "ice"
+                  ? "#bff4ff"
+                  : T.glass === "void"
+                    ? wr > 0.26
+                      ? "#c3b0ff"
+                      : "#8fa0ff"
+                    : "#cfe9ff";
         ctx.globalAlpha = 0.5 + hash(x + row * 3) * 0.45;
         ctx.fillRect(x, wy, 11, 14);
         ctx.globalAlpha = 0.1;
@@ -292,18 +537,20 @@ export class Renderer {
       ctx.lineTo(xb, edge(xb));
     };
     trace();
-    ctx.strokeStyle = "rgba(73,216,255,0.2)";
+    ctx.strokeStyle = T.trim;
+    ctx.globalAlpha = 0.2;
     ctx.lineWidth = 9;
     ctx.stroke();
+    ctx.globalAlpha = 1;
     trace();
-    ctx.strokeStyle = TRIM;
+    ctx.strokeStyle = T.trim;
     ctx.lineWidth = 2.6;
     ctx.stroke();
   }
 
   /* ---------------- street level (deadly ground) ---------------- */
 
-  private street(g: Game) {
+  private street(g: Game, T: Theme) {
     const { ctx } = this;
     const x0 = g.cam.x - 90;
     const x1 = g.cam.x + g.vw + 90;
@@ -318,8 +565,8 @@ export class Renderer {
     ctx.closePath();
     const hazeTop = surf((x0 + x1) / 2) - 150;
     const hz = ctx.createLinearGradient(0, hazeTop, 0, hazeTop + 150);
-    hz.addColorStop(0, "rgba(255,170,90,0)");
-    hz.addColorStop(1, "rgba(255,170,90,0.2)");
+    hz.addColorStop(0, "rgba(0,0,0,0)");
+    hz.addColorStop(1, T.glow);
     ctx.fillStyle = hz;
     ctx.fill();
 
@@ -332,9 +579,9 @@ export class Renderer {
     ctx.closePath();
     const gTop = hazeTop + 140;
     const lg = ctx.createLinearGradient(0, gTop, 0, gTop + 320);
-    lg.addColorStop(0, "#453049");
-    lg.addColorStop(0.2, "#241a33");
-    lg.addColorStop(1, "#0d0a1a");
+    lg.addColorStop(0, T.ground[0]);
+    lg.addColorStop(0.2, T.ground[1]);
+    lg.addColorStop(1, T.ground[2]);
     ctx.fillStyle = lg;
     ctx.fill();
 
@@ -342,15 +589,17 @@ export class Renderer {
     ctx.beginPath();
     ctx.moveTo(x0, surf(x0));
     for (let x = x0 + 12; x <= x1; x += 12) ctx.lineTo(x, surf(x));
-    ctx.strokeStyle = "rgba(255,186,110,0.3)";
+    ctx.strokeStyle = T.groundLine;
+    ctx.globalAlpha = 0.32;
     ctx.lineWidth = 9;
     ctx.stroke();
-    ctx.strokeStyle = "#ffd09a";
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = T.groundLine;
     ctx.lineWidth = 2.2;
     ctx.stroke();
 
     // thermal updraft shimmer — shows the glide rescue zone above the street
-    ctx.strokeStyle = "rgba(160,220,255,0.16)";
+    ctx.strokeStyle = T.ambient === "embers" || T.ambient === "dust" ? "rgba(255,210,160,0.18)" : "rgba(160,220,255,0.16)";
     ctx.lineWidth = 2;
     for (let i = 0; i < 16; i++) {
       const ux = x0 + ((i * 137) % (x1 - x0));
@@ -367,21 +616,26 @@ export class Renderer {
     // street lamps
     for (let x = Math.ceil(x0 / 170) * 170; x < x1; x += 170) {
       const sy = surf(x);
-      ctx.strokeStyle = "#1b1630";
+      ctx.strokeStyle = T.ceiling;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(x, sy);
       ctx.lineTo(x, sy - 44);
       ctx.lineTo(x + 14, sy - 50);
       ctx.stroke();
-      const lampG = ctx.createRadialGradient(x + 16, sy - 50, 2, x + 16, sy - 50, 54);
-      lampG.addColorStop(0, "rgba(255,196,120,0.5)");
-      lampG.addColorStop(1, "rgba(255,196,120,0)");
-      ctx.fillStyle = lampG;
+      if (!this.lampGrad) {
+        this.lampGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, 54);
+        this.lampGrad.addColorStop(0, "rgba(255,196,120,0.5)");
+        this.lampGrad.addColorStop(1, "rgba(255,196,120,0)");
+      }
+      ctx.save();
+      ctx.translate(x + 16, sy - 50);
+      ctx.fillStyle = this.lampGrad;
       ctx.beginPath();
-      ctx.arc(x + 16, sy - 50, 54, 0, Math.PI * 2);
+      ctx.arc(0, 0, 54, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = "#ffd79a";
+      ctx.restore();
+      ctx.fillStyle = T.groundLine;
       ctx.beginPath();
       ctx.arc(x + 16, sy - 50, 3.4, 0, Math.PI * 2);
       ctx.fill();
@@ -413,18 +667,18 @@ export class Renderer {
 
   /* ---------------- world objects ---------------- */
 
-  private worldObjects(g: Game) {
+  private worldObjects(g: Game, T: Theme) {
     const cw = g.world.cw;
     const i0 = Math.max(0, Math.floor((g.cam.x - 120) / cw));
     const i1 = Math.floor((g.cam.x + g.vw + 120) / cw);
     for (let i = i0; i <= i1; i++) {
       const c = g.world.chunks.get(i);
       if (!c) continue;
-      for (const o of c.objs) this.obj(g, o);
+      for (const o of c.objs) this.obj(g, o, T);
     }
   }
 
-  private obj(g: Game, o: Obj) {
+  private obj(g: Game, o: Obj, T: Theme) {
     const { ctx } = this;
     const t = g.time;
     switch (o.kind) {
@@ -432,6 +686,56 @@ export class Renderer {
       case "plat": {
         const x = o.x - o.w / 2;
         const y = o.y - o.h / 2;
+        if (o.pod) {
+          // floating web pod — always webbable, bobbing gently
+          const py = o.y + Math.sin(t * 1.6 + o.x * 0.02) * 3;
+          const cy = py - 14;
+          ctx.globalAlpha = 0.16;
+          ctx.fillStyle = T.trim;
+          ctx.beginPath();
+          ctx.arc(o.x, cy, 30 + Math.sin(t * 2.6 + o.x) * 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          // strut down to the deck
+          ctx.strokeStyle = "rgba(200,230,255,0.5)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(o.x - 12, cy + 8);
+          ctx.lineTo(x + 6, o.y - o.h / 2 + 3);
+          ctx.moveTo(o.x + 12, cy + 8);
+          ctx.lineTo(x + o.w - 6, o.y - o.h / 2 + 3);
+          ctx.stroke();
+          // balloon skin
+          ctx.beginPath();
+          ctx.ellipse(o.x, cy, 22, 18, 0, 0, Math.PI * 2);
+          ctx.fillStyle = "#131a3d";
+          ctx.fill();
+          ctx.strokeStyle = T.trim;
+          ctx.lineWidth = 2.2;
+          ctx.stroke();
+          ctx.globalAlpha = 0.35 + 0.25 * Math.sin(t * 3 + o.x);
+          ctx.fillStyle = T.trim;
+          ctx.beginPath();
+          ctx.ellipse(o.x - 5, cy - 5, 7, 5, -0.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          // deck
+          this.rrect(x, py - o.h / 2, o.w, o.h, 6);
+          ctx.fillStyle = "#1b2450";
+          ctx.fill();
+          ctx.strokeStyle = "rgba(150,200,255,0.55)";
+          ctx.lineWidth = 1.8;
+          ctx.stroke();
+          ctx.strokeStyle = T.trim;
+          ctx.globalAlpha = 0.8;
+          ctx.lineWidth = 2.4;
+          ctx.beginPath();
+          ctx.moveTo(x + 7, py - o.h / 2 + 1.4);
+          ctx.lineTo(x + o.w - 7, py - o.h / 2 + 1.4);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          break;
+        }
         // support legs
         ctx.strokeStyle = "#141a3c";
         ctx.lineWidth = 4;
@@ -446,13 +750,13 @@ export class Renderer {
         ctx.fillStyle = "#070b1e";
         ctx.fill();
         this.rrect(x, y, o.w, o.h, 7);
-        ctx.fillStyle = "#222b5c";
+        ctx.fillStyle = T.spike === "vine" ? "#22402a" : T.spike === "coral" ? "#14454a" : T.spike === "ice" ? "#1c3a52" : T.spike === "rock" ? "#3a1f22" : "#222b5c";
         ctx.fill();
         ctx.strokeStyle = "rgba(120,140,255,0.4)";
         ctx.lineWidth = 2;
         ctx.stroke();
         // neon sign strip
-        ctx.strokeStyle = TRIM;
+        ctx.strokeStyle = T.trim;
         ctx.lineWidth = 3;
         ctx.globalAlpha = 0.85;
         ctx.beginPath();
@@ -489,9 +793,21 @@ export class Renderer {
         ctx.lineTo(lx + o.w, o.base);
         ctx.closePath();
         const bg = ctx.createLinearGradient(lx, 0, lx + o.w, 0);
-        bg.addColorStop(0, "#2a3570");
-        bg.addColorStop(0.5, "#36437f");
-        bg.addColorStop(1, "#202a5c");
+        const base3: [string, string, string] =
+          T.spike === "vine"
+            ? ["#1b3a24", "#255133", "#132a1c"]
+            : T.spike === "coral"
+              ? ["#12454a", "#1a6169", "#0d333a"]
+              : T.spike === "rock"
+                ? ["#3a1416", "#55201d", "#260c0e"]
+                : T.spike === "ice"
+                  ? ["#1b3c56", "#2a5f7c", "#14293c"]
+                  : T.spike === "crystal"
+                    ? ["#2c1c5e", "#40298a", "#1d1245"]
+                    : ["#2a3570", "#36437f", "#202a5c"];
+        bg.addColorStop(0, base3[0]);
+        bg.addColorStop(0.5, base3[1]);
+        bg.addColorStop(1, base3[2]);
         ctx.fillStyle = bg;
         ctx.fill();
         // danger edge — a hot rim so the silhouette always reads
@@ -525,7 +841,7 @@ export class Renderer {
             const wx = o.x + c * (hw * 0.62);
             const wr = hash(o.x * 0.21 + r * 3.7 + c * 11.1);
             if (wr > 0.55) continue;
-            ctx.fillStyle = wr > 0.3 ? "#ffd79a" : "#79dcff";
+            ctx.fillStyle = wr > 0.3 ? T.groundLine : T.trim;
             ctx.globalAlpha = 0.45 + hash(r + c * 5 + o.x) * 0.4;
             ctx.fillRect(wx - 4, fy, 8, 11);
             ctx.globalAlpha = 1;
@@ -574,9 +890,22 @@ export class Renderer {
         ctx.lineTo(o.x + o.w / 2, o.y - 6);
         ctx.lineTo(tipX, tipY);
         ctx.closePath();
-        ctx.fillStyle = "#39406e";
+        ctx.fillStyle =
+          T.spike === "vine"
+            ? "#1d5228"
+            : T.spike === "ice"
+              ? "rgba(180,240,255,0.85)"
+              : T.spike === "coral"
+                ? "#2b7f7a"
+                : T.spike === "cactus"
+                  ? "#2f5a2a"
+                  : T.spike === "crystal"
+                    ? "#4b2f8f"
+                    : T.spike === "rock"
+                      ? "#4a1b18"
+                      : "#39406e";
         ctx.fill();
-        ctx.strokeStyle = "#ffc247";
+        ctx.strokeStyle = T.spike === "city" ? "#ffc247" : T.trim;
         ctx.lineWidth = 2.4;
         ctx.stroke();
         // lattice bracing
@@ -599,6 +928,21 @@ export class Renderer {
           ctx.lineTo(cx1 - w1, y1);
           ctx.stroke();
         }
+        // theme garnish: leaves / crystals
+        if (T.spike === "vine" || T.spike === "coral" || T.spike === "crystal") {
+          ctx.fillStyle =
+            T.spike === "crystal" ? "rgba(190,150,255,0.55)" : "rgba(150,255,140,0.5)";
+          const n = Math.max(2, Math.floor(o.len / 30));
+          for (let k = 0; k < n; k++) {
+            const f = (k + 0.5) / n;
+            const lx = lerp(o.x, tipX, f);
+            const ly = lerp(o.y, tipY, f);
+            const side = k % 2 === 0 ? 1 : -1;
+            ctx.beginPath();
+            ctx.ellipse(lx + side * (o.w * 0.5) * (1 - f) * 0.9, ly, 7 - f * 3, 3.4, side * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
         // hazard stripes along the whole beam
         ctx.save();
         ctx.beginPath();
@@ -607,7 +951,7 @@ export class Renderer {
         ctx.lineTo(tipX, tipY);
         ctx.closePath();
         ctx.clip();
-        ctx.fillStyle = "#ffc247";
+        ctx.fillStyle = T.spike === "city" ? "#ffc247" : "rgba(255,255,255,0.14)";
         ctx.globalAlpha = 0.9;
         for (let s = -1; s < o.len / 16 + 2; s++) {
           ctx.save();
@@ -619,7 +963,7 @@ export class Renderer {
         ctx.globalAlpha = 1;
         ctx.restore();
         // warning light at the tip
-        ctx.fillStyle = "#ff5470";
+        ctx.fillStyle = T.spike === "city" ? "#ff5470" : T.trim;
         ctx.beginPath();
         ctx.arc(tipX, tipY - 2, 3.2, 0, Math.PI * 2);
         ctx.fill();
@@ -701,6 +1045,274 @@ export class Renderer {
         ctx.moveTo(o.x + look, sy + 4);
         ctx.lineTo(o.x + look - 22, sy + 54);
         ctx.lineTo(o.x + look + 22, sy + 54);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        break;
+      }
+
+      /* ---- air current: one calm, readable streak band ---- */
+      case "wind": {
+        const x0 = o.x - o.w / 2;
+        const y0 = o.y - o.h / 2;
+        const spd = Math.hypot(o.vx, o.vy) || 1;
+        const ux = o.vx / spd;
+        const uy = o.vy / spd;
+        ctx.save();
+        this.rrect(x0, y0, o.w, o.h, 30);
+        ctx.clip();
+        ctx.lineCap = "round";
+        for (let k = 0; k < 7; k++) {
+          const rr = hash(k * 5.7 + Math.floor(o.x));
+          const off = (rr - 0.5) * (o.h * 0.7);
+          const span = o.w * 0.5;
+          const phase = ((t * (0.22 + rr * 0.2) + rr) % 1) - 0.5;
+          const cx = o.x + ux * phase * span * 2 - uy * off;
+          const cy = o.y + uy * phase * span * 2 + ux * off;
+          const alpha = 0.07 + 0.13 * Math.sin(Math.PI * (phase + 0.5));
+          ctx.strokeStyle = `rgba(215,245,255,${alpha.toFixed(3)})`;
+          ctx.lineWidth = 1.6 + rr * 1.4;
+          ctx.beginPath();
+          ctx.moveTo(cx - ux * 26, cy - uy * 26);
+          ctx.lineTo(cx + ux * 26, cy + uy * 26);
+          ctx.stroke();
+        }
+        ctx.restore();
+        this.rrect(x0, y0, o.w, o.h, 30);
+        ctx.strokeStyle = `rgba(200,240,255,${(0.13 + 0.07 * Math.sin(t * 1.6 + o.x)).toFixed(3)})`;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([9, 13]);
+        ctx.lineDashOffset = -t * 26;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        break;
+      }
+
+      /* ---- burning roof line (deadly) ---- */
+      case "fire": {
+        const x0 = o.x - o.w / 2;
+        const depth = o.h + 26;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x0 - 8, o.y - 6, o.w + 16, depth + 12);
+        ctx.clip();
+        // scorched roof
+        ctx.fillStyle = "rgba(24,6,4,0.9)";
+        ctx.fillRect(x0, o.y - 4, o.w, 10);
+        // flames licking down into the corridor
+        for (let k = 0; k < 10; k++) {
+          const fx = x0 + (k + 0.5) * (o.w / 10);
+          const hgt = depth * (0.55 + 0.5 * Math.abs(Math.sin(t * 6 + k * 1.7 + o.x * 0.05)));
+          const grad2 = ctx.createLinearGradient(0, o.y, 0, o.y + hgt + 8);
+          grad2.addColorStop(0, "rgba(255,235,150,0.95)");
+          grad2.addColorStop(0.45, "rgba(255,130,40,0.8)");
+          grad2.addColorStop(1, "rgba(255,60,30,0)");
+          ctx.fillStyle = grad2;
+          ctx.beginPath();
+          ctx.moveTo(fx - 10, o.y - 2);
+          ctx.quadraticCurveTo(fx - 6, o.y + hgt * 0.6, fx + Math.sin(t * 5 + k) * 4, o.y + hgt + 8);
+          ctx.quadraticCurveTo(fx + 7, o.y + hgt * 0.5, fx + 10, o.y - 2);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+        // heat glow in the corridor below
+        const fg = ctx.createRadialGradient(o.x, o.y + 14, 6, o.x, o.y + 14, o.w * 0.85);
+        fg.addColorStop(0, "rgba(255,140,60,0.3)");
+        fg.addColorStop(1, "rgba(255,140,60,0)");
+        ctx.fillStyle = fg;
+        ctx.beginPath();
+        ctx.arc(o.x, o.y + 14, o.w * 0.85, 0, Math.PI * 2);
+        ctx.fill();
+        if (Math.random() < 0.2) {
+          g.parts.spawn({
+            x: o.x + (Math.random() - 0.5) * o.w,
+            y: o.y + 8,
+            vx: (Math.random() - 0.5) * 30,
+            vy: 50 + Math.random() * 60,
+            life: 0.5 + Math.random() * 0.4,
+            size: 2 + Math.random() * 2,
+            color: "rgba(255,170,70,0.7)",
+            grav: 60,
+            drag: 0.5,
+          });
+        }
+        break;
+      }
+
+      /* ---- reef fish (deadly, drifting) ---- */
+      case "fish": {
+        const fx = o.x + Math.sin(t * 0.55 + o.ph) * 60;
+        const fy = o.y + Math.sin(t * 1.1 + o.ph) * o.bob;
+        const dir = Math.cos(t * 0.55 + o.ph) >= 0 ? 1 : -1;
+        ctx.save();
+        ctx.translate(fx, fy);
+        ctx.scale(dir, 1);
+        // warning halo
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = "rgba(255,120,140,0.45)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 6]);
+        ctx.lineDashOffset = -t * 24;
+        ctx.beginPath();
+        ctx.arc(0, 0, o.r + 11, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // tail
+        ctx.fillStyle = "#ff7d4d";
+        ctx.beginPath();
+        ctx.moveTo(-o.r * 0.7, 0);
+        ctx.lineTo(-o.r * 1.7, -o.r * 0.8);
+        ctx.lineTo(-o.r * 1.5, o.r * 0.8);
+        ctx.closePath();
+        ctx.fill();
+        // body
+        ctx.beginPath();
+        ctx.ellipse(0, 0, o.r, o.r * 0.66, 0, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffb347";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(90,30,10,0.5)";
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+        // stripes + fin
+        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        for (let k = -1; k <= 1; k++) {
+          ctx.beginPath();
+          ctx.ellipse(k * o.r * 0.38, 0, 2.4, o.r * 0.55, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = "#ff7d4d";
+        ctx.beginPath();
+        ctx.moveTo(-2, -o.r * 0.6);
+        ctx.lineTo(4, -o.r * 1.2);
+        ctx.lineTo(9, -o.r * 0.5);
+        ctx.closePath();
+        ctx.fill();
+        // eye
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(o.r * 0.52, -o.r * 0.16, o.r * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#20161a";
+        ctx.beginPath();
+        ctx.arc(o.r * 0.56, -o.r * 0.16, o.r * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        break;
+      }
+
+      /* ---- hunter drone (deadly, sweeps sideways) ---- */
+      case "drone": {
+        const dx = o.x + Math.sin(t * 0.7 + o.ph) * 78;
+        const dy = o.y + Math.sin(t * 1.4 + o.ph) * o.bob;
+        ctx.globalAlpha = 0.16 + 0.08 * Math.sin(t * 4 + o.ph);
+        ctx.fillStyle = "#ff4656";
+        ctx.beginPath();
+        ctx.arc(dx, dy, o.r + 18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = "rgba(255,70,86,0.55)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([7, 8]);
+        ctx.lineDashOffset = -t * 36;
+        ctx.beginPath();
+        ctx.arc(dx, dy, o.r + 12, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // rotors
+        ctx.strokeStyle = "rgba(160,180,255,0.65)";
+        ctx.lineWidth = 2;
+        for (const s of [-1, 1]) {
+          const rx = dx + s * o.r * 0.95;
+          const ry = dy - o.r * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(dx + s * o.r * 0.3, dy - o.r * 0.2);
+          ctx.lineTo(rx, ry);
+          ctx.stroke();
+          ctx.save();
+          ctx.translate(rx, ry);
+          ctx.scale(1, 0.32);
+          ctx.globalAlpha = 0.5;
+          ctx.beginPath();
+          ctx.arc(0, 0, 10 + Math.sin(t * 34 + s) * 1.5, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+          ctx.globalAlpha = 1;
+        }
+        // hull
+        this.rrect(dx - o.r * 0.7, dy - o.r * 0.5, o.r * 1.4, o.r, 8);
+        ctx.fillStyle = "#2b3260";
+        ctx.fill();
+        ctx.strokeStyle = "#8fa0ff";
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+        // scanning eye + cone
+        const look = Math.sin(t * 2.2 + o.ph) * 3;
+        ctx.fillStyle = "#ff4656";
+        ctx.beginPath();
+        ctx.arc(dx + look, dy, 5.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.14;
+        ctx.beginPath();
+        ctx.moveTo(dx + look, dy + 4);
+        ctx.lineTo(dx + look - 26, dy + 60);
+        ctx.lineTo(dx + look + 26, dy + 60);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        break;
+      }
+
+      /* ---- the floor gate: a hole in the street ---- */
+      case "portal": {
+        const yy = o.y;
+        // dark mouth
+        ctx.beginPath();
+        ctx.ellipse(o.x, yy + 6, o.r, o.r * 0.42, 0, 0, Math.PI * 2);
+        ctx.fillStyle = "#04030c";
+        ctx.fill();
+        // swirling depths
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(o.x, yy + 6, o.r * 0.96, o.r * 0.4, 0, 0, Math.PI * 2);
+        ctx.clip();
+        for (let k = 0; k < 3; k++) {
+          const rr = ((t * 0.5 + k / 3) % 1) * o.r;
+          ctx.globalAlpha = 0.35 * (1 - rr / o.r);
+          ctx.strokeStyle = "#ffe79a";
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.ellipse(o.x, yy + 6, rr, rr * 0.42, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        ctx.restore();
+        // glowing rim
+        const rim = ctx.createRadialGradient(o.x, yy + 6, o.r * 0.4, o.x, yy + 6, o.r * 1.5);
+        rim.addColorStop(0, "rgba(255,231,154,0.5)");
+        rim.addColorStop(1, "rgba(255,231,154,0)");
+        ctx.fillStyle = rim;
+        ctx.beginPath();
+        ctx.arc(o.x, yy + 6, o.r * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#ffe79a";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.ellipse(o.x, yy + 6, o.r, o.r * 0.42, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(255,255,255,0.8)";
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.ellipse(o.x, yy + 6, o.r * 0.82, o.r * 0.34, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        // a single soft beam marking the way in
+        ctx.globalAlpha = 0.08 + 0.05 * Math.sin(t * 2.2);
+        ctx.fillStyle = "#ffe79a";
+        ctx.beginPath();
+        ctx.moveTo(o.x - o.r * 0.62, yy);
+        ctx.lineTo(o.x - o.r * 0.22, yy - 380);
+        ctx.lineTo(o.x + o.r * 0.22, yy - 380);
+        ctx.lineTo(o.x + o.r * 0.62, yy);
         ctx.closePath();
         ctx.fill();
         ctx.globalAlpha = 1;
@@ -957,6 +1569,21 @@ export class Renderer {
       ctx.stroke();
     }
 
+    // soft contact shadow — keeps the spider readable over any backdrop
+    if (!this.haloGrad) {
+      this.haloGrad = ctx.createRadialGradient(0, 0, 6, 0, 0, 30);
+      this.haloGrad.addColorStop(0, "rgba(5,7,15,0.55)");
+      this.haloGrad.addColorStop(0.6, "rgba(5,7,15,0.3)");
+      this.haloGrad.addColorStop(1, "rgba(5,7,15,0)");
+    }
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.fillStyle = this.haloGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, 30, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(ang);
@@ -1112,7 +1739,7 @@ export class Renderer {
     ctx.stroke();
   }
 
-  private speedLines(g: Game) {
+  private speedLines(g: Game, T: Theme) {
     const { ctx } = this;
     const p = g.player;
     const sp = p.speed();
@@ -1124,6 +1751,7 @@ export class Renderer {
     const sy = p.y - g.cam.y + g.cam.sy;
     const seed = Math.floor(g.time * 24);
     ctx.lineCap = "round";
+    ctx.globalAlpha = 1;
     for (let i = 0; i < n; i++) {
       const r1 = hash(i * 13.7 + seed * 3.1);
       const r2 = hash(i * 7.7 + seed * 1.3 + 5);
@@ -1131,12 +1759,138 @@ export class Renderer {
       const off = (r2 - 0.5) * 130;
       const px = sx - ux * back - uy * off;
       const py = sy - uy * back + ux * off;
-      ctx.strokeStyle = `rgba(220,235,255,${(0.1 + r1 * 0.16).toFixed(3)})`;
+      ctx.globalAlpha = 0.1 + r1 * 0.16;
+      ctx.strokeStyle = T.accent;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(px, py);
       ctx.lineTo(px - ux * (24 + r2 * 40), py - uy * (24 + r2 * 40));
       ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* ---------------- the floor gate that ends the level ---------------- */
+
+  private gate(g: Game, T: Theme) {
+    void T;
+    const hole = g.gateHole;
+    if (!hole) return;
+    const { ctx } = this;
+    const surf = (x: number) => g.world.lavaY(x);
+    const gy = surf(hole.x);
+
+    // cleared landing strip on both sides — reads as "the way in"
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(hole.x - 460, gy - 90, 920, 130);
+    ctx.clip();
+    ctx.setLineDash([26, 22]);
+    ctx.lineDashOffset = -g.time * 40;
+    ctx.strokeStyle = "rgba(255,231,154,0.4)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(hole.x - 430, gy + 16);
+    ctx.lineTo(hole.x + 430, gy + 16);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = "rgba(255,231,154,0.75)";
+    for (const sgn of [-1, 1]) {
+      for (let k = 0; k < 4; k++) {
+        const ax = hole.x + sgn * (110 + k * 90);
+        const bob = Math.sin(g.time * 3 + k) * 2;
+        ctx.beginPath();
+        ctx.moveTo(ax - 16 * sgn, gy + 40 + bob);
+        ctx.lineTo(ax + 4 * sgn, gy + 52 + bob);
+        ctx.lineTo(ax - 16 * sgn, gy + 64 + bob);
+        ctx.strokeStyle = "rgba(255,231,154,0.7)";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // the mouth itself, cut into the asphalt
+    ctx.beginPath();
+    ctx.ellipse(hole.x, gy + 6, hole.r + 12, (hole.r + 12) * 0.44, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(6,4,14,0.95)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,231,154,0.55)";
+    ctx.lineWidth = 5;
+    ctx.globalAlpha = 0.3 + 0.2 * Math.sin(g.time * 4);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  /* ---------------- ambient weather, per world ---------------- */
+
+  private ambient(g: Game, T: Theme) {
+    const { ctx } = this;
+    if (T.ambient === "none" || T.ambient === "stars") return;
+    const w = g.vw;
+    const h = g.vh;
+    const rise = T.ambient === "bubbles" || T.ambient === "embers" || T.ambient === "sparks";
+    const n = T.ambient === "snow" ? 46 : 32;
+    for (let i = 0; i < n; i++) {
+      const r1 = hash(i * 4.13);
+      const r2 = hash(i * 8.77 + 2.1);
+      const r3 = hash(i * 2.31 + 9.4);
+      const speed = (rise ? -1 : 1) * (18 + r1 * 60);
+      const y = wrap(r2 * h - g.cam.y * 0.12 + g.time * speed, h + 60) - 30;
+      const drift = Math.sin(g.time * (0.4 + r3) + i) * (T.ambient === "leaves" ? 40 : 16);
+      const x = wrap(r1 * (w + 80) - g.cam.x * 0.08 + drift, w + 80) - 40;
+      const size = 1.4 + r3 * (T.ambient === "bubbles" ? 4 : T.ambient === "snow" ? 3 : 2.4);
+      ctx.globalAlpha = 0.12 + r1 * 0.3;
+      if (T.ambient === "embers" || T.ambient === "sparks") {
+        ctx.fillStyle = i % 3 === 0 ? T.accent : T.ambientColor;
+      } else {
+        ctx.fillStyle = T.ambientColor;
+      }
+      if (T.ambient === "leaves") {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(Math.sin(g.time * 0.8 + i) * 0.9);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, size * 1.8, size * 0.8, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else if (T.ambient === "bubbles") {
+        ctx.strokeStyle = T.ambientColor;
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // underwater light shafts
+    if (T.ambient === "bubbles") {
+      ctx.globalAlpha = 0.06;
+      ctx.fillStyle = "#cdf6ff";
+      for (let k = 0; k < 5; k++) {
+        const bx = wrap(k * (w / 5) + Math.sin(g.time * 0.2 + k) * 30 - g.cam.x * 0.05, w + 200) - 100;
+        ctx.beginPath();
+        ctx.moveTo(bx, 0);
+        ctx.lineTo(bx + 70, h);
+        ctx.lineTo(bx + 150, h);
+        ctx.lineTo(bx + 60, 0);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+    if (T.ambient === "snow" && g.state === "playing") {
+      ctx.globalAlpha = 0.05;
+      ctx.fillStyle = "#e8fbff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalAlpha = 1;
     }
   }
 

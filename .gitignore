@@ -3,3 +3,6 @@ dist/
 .DS_Store
 *.log
 .env*
+tools/*.cjs
+tools/*.mjs
+tools/node_modules

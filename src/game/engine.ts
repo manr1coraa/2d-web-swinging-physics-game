@@ -1,14 +1,24 @@
-import { World } from "./world";
+import { World, themeForLevel, gateX } from "./world";
+import type { ThemeId } from "./world";
 import { Player } from "./player";
 import { Particles } from "./particles";
 import { Sfx } from "./audio";
 import { Renderer } from "./renderer";
 import { clamp, lerp, dist, noise1 } from "./util";
 
-export type GameState = "menu" | "playing" | "dying" | "dead" | "paused";
+export type GameState =
+  | "menu"
+  | "playing"
+  | "dying"
+  | "dead"
+  | "paused"
+  | "levelup";
 
 export interface Snap {
   state: GameState;
+  level: number;
+  unlocked: number;
+  theme: ThemeId;
   dist: number;
   coins: number;
   best: number;
@@ -24,6 +34,10 @@ export interface Snap {
   gliding: boolean;
   announce: Announce | null;
   lowAlt: number; // 0..1 — how close to the street you are
+  windGain: number; // 0..1 — how deep you are inside an air current
+  gateM: number; // meters to the next floor gate
+  segStart: number; // meters where this stretch began
+  missed: boolean; // did you sail past a gate?
 }
 
 export interface Tip {
@@ -89,6 +103,12 @@ export const TIPS: Record<string, Tip> = {
     text: "Strung along the ideal arc. Chain them for a rising combo jingle.",
     tone: "good",
   },
+  release: {
+    id: "release",
+    title: "Let go!",
+    text: "A held line only rocks you back and forth. Release at the top of the swing to launch forward — that is how you actually travel.",
+    tone: "info",
+  },
   boost: {
     id: "boost",
     title: "Boost ring",
@@ -99,6 +119,42 @@ export const TIPS: Record<string, Tip> = {
     id: "shield",
     title: "Shield bubble",
     text: "Absorbs one fatal hit and throws you back into the air. One save per pickup.",
+    tone: "good",
+  },
+  wind: {
+    id: "wind",
+    title: "Air current",
+    text: "Those swirling tunnels push you hard. Enter along the arrows to get flung forward — they are the fastest way across a gap.",
+    tone: "good",
+  },
+  fire: {
+    id: "fire",
+    title: "Burning rooftop",
+    text: "Roofs are on fire down here. Webbing through the flames is fatal — swing high or grab a pod instead.",
+    tone: "danger",
+  },
+  fish: {
+    id: "fish",
+    title: "Reef fish",
+    text: "Big fish drift through the trench. Touching one hurts — keep your line above them.",
+    tone: "danger",
+  },
+  drone: {
+    id: "drone",
+    title: "Hunter drone",
+    text: "Drones patrol sideways with a red scanner eye. Pass behind them, never through.",
+    tone: "danger",
+  },
+  pod: {
+    id: "pod",
+    title: "Web pod",
+    text: "Floating pods are always webbable. If the next roof looks too far, ride from pod to pod.",
+    tone: "good",
+  },
+  portal: {
+    id: "portal",
+    title: "Level gate",
+    text: "Reach the glowing gate at 250 m to drop into the next level. Only a dead-centre hit counts!",
     tone: "good",
   },
   magnet: {
@@ -112,7 +168,7 @@ export const TIPS: Record<string, Tip> = {
 /** full-screen transformation callout */
 export interface Announce {
   id: string;
-  kind: "shield" | "magnet" | "boost" | "glide" | "perfect" | "save";
+  kind: "shield" | "magnet" | "boost" | "glide" | "perfect" | "save" | "level";
   title: string;
   sub: string;
 }
@@ -142,6 +198,9 @@ const UPDRAFT_H = 330; // height above the street where thermals kick in
 const UPDRAFT_VY = -330; // how hard the updraft lifts you clear
 const GRACE = 3.2; // seconds of invulnerability at the start of a run
 const METER = 50; // px per meter
+export const LEVEL_METERS = 250;
+export const MAX_LEVELS = 40;
+const UNLOCK_KEY = "webby_unlocked";
 const MAGNET_TIME = 9;
 
 const BEST_KEY = "pauchok_best";
@@ -180,6 +239,13 @@ export class Game {
   glideHold = false; // explicit glide input (button / key)
   graceT = 0;
   lowAlt = 0;
+  windGain = 0; // 0..1 how deep the player is inside an air current
+  private glideAnnounced = false;
+  levelT = 0;
+  gateHole: { x: number; y: number; r: number } | null = null;
+  gateIndex = 0;
+  missedGate = false;
+  segStartM = 0;
   announce: Announce | null = null;
   private announceT = 0;
   private autoRetryT = 0;
@@ -194,6 +260,9 @@ export class Game {
   coins = 0;
   best = 0;
   newBest = false;
+  level = 0;
+  unlocked = 0;
+  theme: ThemeId = "city";
   maxSpeed = 0;
   cause = "";
   private coinChain = 0;
@@ -219,6 +288,7 @@ export class Game {
     this.renderer = new Renderer(canvas);
     try {
       this.best = parseInt(localStorage.getItem(BEST_KEY) ?? "0", 10) || 0;
+      this.unlocked = parseInt(localStorage.getItem(UNLOCK_KEY) ?? "0", 10) || 0;
       const saved = localStorage.getItem(TAUGHT_KEY);
       if (saved) this.taught = new Set<string>(JSON.parse(saved) as string[]);
     } catch {
@@ -241,15 +311,29 @@ export class Game {
 
   /* ---------------- public API ---------------- */
 
-  start() {
-    this.world = new World();
+  start(levelIndex?: number) {
+    if (levelIndex !== undefined) {
+      this.level = Math.max(0, Math.min(MAX_LEVELS - 1, levelIndex));
+      if (this.level > this.unlocked) this.unlocked = this.level;
+      try {
+        localStorage.setItem(UNLOCK_KEY, String(this.unlocked));
+      } catch {
+        /* ignore */
+      }
+    }
+    this.startRun(false);
+  }
+
+  private startRun(keepCoins: boolean) {
+    this.world = new World(this.level);
+    this.theme = themeForLevel(this.level);
     this.world.ensure(0);
     this.parts.list = [];
     this.texts = [];
     this.player.reset(this.startX, this.world.ceilY(this.startX) + 225);
     this.runT = 0;
     this.distM = 0;
-    this.coins = 0;
+    if (!keepCoins) this.coins = 0;
     this.newBest = false;
     this.maxSpeed = 0;
     this.cause = "";
@@ -267,6 +351,10 @@ export class Game {
     this.autoRetryT = 0;
     this.attachTime = -10;
     this.pumpFx = 0;
+    this.windGain = 0;
+    this.glideAnnounced = false;
+    this.missedGate = false;
+    this.segStartM = 0;
     this.gliding = false;
     this.glideHold = false;
     this.announce = null;
@@ -275,6 +363,8 @@ export class Game {
     this.tip = null;
     this.tipT = 0;
     this.tipScanT = 0;
+    this.refreshGate();
+    this.levelT = 0;
     this.cam.x = this.player.x - this.vw * 0.4;
     this.cam.y = this.player.y - this.vh * 0.52;
     this.state = "playing";
@@ -284,7 +374,32 @@ export class Game {
     // onboarding: first swing is free — shows what to do
     const ax = this.player.x + 135;
     this.player.attach(ax, this.world.ceilY(ax) + 2);
+    if (this.level > 0) {
+      this.showAnnounce({
+        id: `level${this.level}-${Math.floor(this.time * 7)}`,
+        kind: "boost",
+        title: `LEVEL ${this.level + 1}`,
+        sub: this.theme.toUpperCase(),
+      });
+    }
     this.emit();
+  }
+
+  private advanceLevel() {
+    if (this.level + 1 >= MAX_LEVELS) {
+      this.toMenu();
+      return;
+    }
+    this.level += 1;
+    if (this.level > this.unlocked) {
+      this.unlocked = this.level;
+      try {
+        localStorage.setItem(UNLOCK_KEY, String(this.unlocked));
+      } catch {
+        /* ignore */
+      }
+    }
+    this.startRun(true);
   }
 
   toMenu() {
@@ -323,12 +438,15 @@ export class Game {
     this.glideHold = on;
     if (on && this.state === "playing") {
       if (this.player.attached) this.release(false);
-      this.showAnnounce({
-        id: "glide" + Math.floor(this.time * 10),
-        kind: "glide",
-        title: "GLIDE MODE",
-        sub: "web-wings deployed",
-      });
+      if (!this.glideAnnounced) {
+        this.glideAnnounced = true;
+        this.showAnnounce({
+          id: "glide" + this.level,
+          kind: "glide",
+          title: "GLIDE MODE",
+          sub: "web-wings deployed",
+        });
+      }
       this.sfx.magnetUp();
     }
     this.emit();
@@ -460,16 +578,18 @@ export class Game {
       p.vx *= 1.045;
       p.vy *= 1.045;
       this.perfectCombo = Math.min(9, this.perfectCombo + 1);
-      this.popup(
-        p.x,
-        p.y - 52,
-        this.perfectCombo > 1 ? `PERFECT ×${this.perfectCombo}` : "PERFECT!",
-        "#7df0ff",
-        24,
-      );
+      if (this.perfectCombo === 1 || this.perfectCombo % 3 === 0) {
+        this.popup(
+          p.x,
+          p.y - 48,
+          this.perfectCombo > 1 ? `PERFECT ×${this.perfectCombo}` : "PERFECT",
+          "#7df0ff",
+          18,
+        );
+      }
       this.parts.ring(p.x, p.y, "rgba(125,240,255,0.9)", 8, 0.45);
       this.sfx.perfect(this.perfectCombo);
-      if (this.perfectCombo >= 3)
+      if (this.perfectCombo === 4 || this.perfectCombo === 7)
         this.showAnnounce({
           id: "perfect" + this.perfectCombo,
           kind: "perfect",
@@ -491,13 +611,11 @@ export class Game {
   ): { x: number; y: number; d: number } | null {
     const p = this.player;
     const w = this.world;
-    const bestRef: {
-      cur: { x: number; y: number; d: number; score: number } | null;
-    } = { cur: null };
+    const cands: { x: number; y: number; d: number; score: number }[] = [];
     // when nothing good is ahead, accept anything overhead or slightly behind
-    const minD = desperate ? 46 : 70;
-    const minBack = desperate ? -190 : 4;
-    const maxTheta = desperate ? 100 : 82;
+    const minD = desperate ? 44 : 64;
+    const minBack = desperate ? -220 : 2;
+    const maxTheta = desperate ? 104 : 84;
 
     const consider = (ax: number, ay: number) => {
       const dx = ax - p.x;
@@ -511,15 +629,18 @@ export class Game {
       let score = 0;
       score += Math.abs(theta - 40) * 1.6; // ~40° ahead is the sweet spot
       score += Math.abs(d - 215) * 0.35; // mid-length ropes swing best
-      // would the pendulum dip into lava? (rope may also spool +70)
-      if (ay + d + 70 + p.r + 12 > w.lavaY(ax)) score += 500;
+      // would the pendulum dip into lava anywhere along the sweep? (rope also spools +70)
+      let lowestSky = w.lavaY(ax);
+      for (let k = 0; k <= 6; k++) {
+        const sx = p.x + ((ax + d) - p.x) * (k / 6);
+        lowestSky = Math.min(lowestSky, w.lavaY(sx));
+      }
+      const dip = ay + d + 70 + p.r + 12 - lowestSky;
+      if (dip > 0) score += 500 + dip; // the deeper the dip, the worse
       // line of sight — the surface must actually block the ray there
       const hit = w.raycast(p.x, p.y, dx / d, dy / d, d + 12);
       if (!hit || dist(hit.x, hit.y, ax, ay) > 18) return;
-      const best = bestRef.cur;
-      if (!best || score < best.score) {
-        bestRef.cur = { x: ax, y: ay, d, score };
-      }
+      cands.push({ x: ax, y: ay, d, score });
     };
 
     // ceiling samples (desperate scans behind the spider too)
@@ -538,8 +659,32 @@ export class Game {
       consider(o.x + o.w / 2 - 5, o.y - o.h / 2 - 2);
     });
 
-    const b = bestRef.cur;
-    return b ? { x: b.x, y: b.y, d: b.d } : null;
+    if (cands.length === 0) return null;
+    cands.sort((a, b) => a.score - b.score);
+
+    // ---- second pass: walk the actual swing arc on the shortlisted anchors.
+    // A coarse sample can slip straight over a 30px spire, so this one is fine.
+    const shortlist = Math.min(cands.length, 6);
+    let best: { x: number; y: number; d: number; score: number } | null = null;
+    for (let i = 0; i < shortlist; i++) {
+      const c = cands[i];
+      const a0 = Math.atan2(p.x - c.x, p.y - c.y);
+      const aEnd = Math.PI / 2 + Math.PI * 0.42; // through the bottom and out the far upswing
+      let penalty = 0;
+      const N = 16;
+      for (let k = 1; k <= N; k++) {
+        const a = a0 + ((aEnd - a0) * k) / N;
+        const hx = c.x + Math.sin(a) * c.d;
+        const hy = c.y + Math.cos(a) * c.d;
+        if (w.hazardNear(hx, hy, 34, this.time)) penalty += 120;
+      }
+      c.score += penalty;
+      if (!best || c.score < best.score) best = c;
+      // early out: nothing further down the list can beat what we already have
+      const next = cands[i + 1];
+      if (best && next && best.score + 120 * 16 < next.score) break;
+    }
+    return best ? { x: best.x, y: best.y, d: best.d } : null;
   }
 
   /** attach to the auto-aim target, if any */
@@ -561,9 +706,9 @@ export class Game {
     return true;
   }
 
-  private popup(x: number, y: number, str: string, color: string, size = 22) {
-    if (this.texts.length > 8) this.texts.shift();
-    this.texts.push({ x, y, str, color, size, life: 0.95, max: 0.95 });
+  private popup(x: number, y: number, str: string, color: string, size = 20) {
+    if (this.texts.length > 5) this.texts.shift();
+    this.texts.push({ x, y, str, color, size, life: 0.7, max: 0.7 });
   }
 
   /* ---------------- core loop ---------------- */
@@ -639,6 +784,43 @@ export class Game {
       return;
     }
 
+    if (this.state === "levelup") {
+      this.levelT += dt;
+      // the spider is being sucked into the gate — spiral him in
+      const p2 = this.player;
+      p2.x = lerp(p2.x, this.gateHole?.x ?? p2.x, 1 - Math.exp(-dt * 3.2));
+      p2.y = lerp(p2.y, (this.gateHole?.y ?? p2.y) + 60, 1 - Math.exp(-dt * 3.2));
+      p2.vx *= Math.pow(0.5, dt * 3);
+      p2.vy *= Math.pow(0.5, dt * 3);
+      p2.trail.push({ x: p2.x, y: p2.y });
+      if (p2.trail.length > 22) p2.trail.shift();
+      if (Math.random() < dt * 34) {
+        const a = Math.random() * Math.PI * 2;
+        const rr = 40 + Math.random() * 60;
+        this.parts.spawn({
+          x: (this.gateHole?.x ?? p2.x) + Math.cos(a) * rr,
+          y: (this.gateHole?.y ?? p2.y) - 40 + Math.sin(a) * rr * 0.6,
+          vx: -Math.cos(a) * 130,
+          vy: -Math.sin(a) * 90 - 40,
+          life: 0.6 + Math.random() * 0.5,
+          size: 2 + Math.random() * 4,
+          color: this.theme === "underwater" ? "rgba(140,240,255,0.85)" : "rgba(255,226,150,0.9)",
+          grav: -60,
+        });
+      }
+      this.parts.update(dt);
+      this.trauma = Math.max(0, this.trauma - dt * 0.6);
+      this.updateShake(dt);
+      this.sfx.setWind(0);
+      if (this.levelT > 2.5) {
+        this.state = "playing"; // guard so advanceLevel can restart cleanly
+        this.advanceLevel();
+      } else {
+        this.emit();
+      }
+      return;
+    }
+
     if (this.state !== "playing") return;
 
     this.runT += dt;
@@ -689,7 +871,39 @@ export class Game {
     this.updateShake(dt);
     this.world.ensure(p.x + this.vw);
 
+    // ---- the gate pulls: a near miss still gets sucked into the hole ----
+    const gh = this.gateHole;
+    if (gh && this.state === "playing") {
+      const dx = p.x - gh.x;
+      const dy = p.y - (gh.y - 18);
+      const dd = Math.hypot(dx, dy);
+      if (dd < 320 && dd > 1 && p.x < gh.x + 60) {
+        const pull = Math.pow(1 - dd / 320, 2) * 1250;
+        p.vx -= (dx / dd) * pull * dt;
+        p.vy -= (dy / dd) * pull * dt;
+      }
+      // sailed clean past it — the next gate is 250 m further on
+      if (p.x > gh.x + 240 && !this.missedGate) {
+        this.missedGate = true;
+        this.segStartM = this.distM;
+        this.refreshGate();
+        this.showAnnounce({
+          id: "missed" + this.gateIndex,
+          kind: "save",
+          title: "GATE MISSED",
+          sub: "next one is 250 m ahead",
+        });
+        this.popup(p.x, p.y - 70, "MISSED!", "#ff8ea1", 26);
+        this.sfx.shieldBreak();
+      }
+    }
+
     this.updateTips(dt);
+
+    // held the same line for a long time? teach the release once.
+    if (p.attached && this.time - this.attachTime > 2.6 && this.judgeHold()) {
+      this.show("release");
+    }
 
     // one-button web: keep grabbing while the key is held
     if (this.holdWeb && !p.attached) {
@@ -712,7 +926,7 @@ export class Game {
     const ms = Math.floor(this.distM / 100) * 100;
     if (ms > 0 && ms > this.lastMilestone) {
       this.lastMilestone = ms;
-      this.popup(p.x, p.y - 90, `${ms} M!`, "#ffd23f", 34);
+      this.popup(p.x, p.y - 90, `${ms} M`, "#e8b64a", 26);
       this.sfx.milestone();
     }
 
@@ -733,7 +947,8 @@ export class Game {
       p.vy > -80 &&
       this.state === "playing";
     this.gliding = glide;
-    p.vy += (glide ? G * GLIDE_G : G) * h;
+    const wind = this.sampleWind();
+    p.vy += (glide ? G * GLIDE_G : G) * h * (1 - 0.25 * wind.gain);
     if (glide) {
       // speed turns into altitude: a fast glide climbs, a slow one sinks
       const liftF = clamp((Math.abs(p.vx) - 270) / 620, 0, 1);
@@ -750,6 +965,15 @@ export class Game {
       if (p.vy > targetVy) p.vy += (targetVy - p.vy) * Math.min(1, h * rate);
       p.vx += GLIDE_FWD * h;
     }
+    // A current is honest drag: the air pulls the body toward its own
+    // velocity. Strong enough in the core to carry you, gentle at the edges.
+    if (wind.gain > 0.01) {
+      const c = wind.gain * wind.gain * 12; // 1/s
+      const k = Math.min(1, c * h);
+      p.vx += (wind.vx - p.vx) * k;
+      p.vy += (wind.vy - p.vy) * k;
+    }
+
     // pace quickens the further you go — gently
     const fwd = p.attached
       ? FWD_ATT + Math.min(50, this.distM * 0.25)
@@ -764,6 +988,9 @@ export class Game {
       p.vx *= k;
       p.vy *= k;
     }
+    // ---- air currents: strong flowing funnels you can ride ----
+    // The flow drags the body toward its velocity and takes weight off the
+    // wings, so a strong current can genuinely carry you across a gap.
     p.x += p.vx * h;
     p.y += p.vy * h;
 
@@ -827,6 +1054,13 @@ export class Game {
         p.y = cy + p.r + 0.5;
         if (p.vy < 0) p.vy *= -0.22;
       }
+    }
+
+    // floor gate — the hole at 250 m swallows you into the next level
+    const gate = this.gateHole;
+    if (gate && Math.abs(p.x - gate.x) < gate.r && p.y + p.r > gate.y - 44) {
+      this.reachPortal(gate.x, gate.y);
+      return;
     }
 
     // lava — deadly (unless shielded)
@@ -924,6 +1158,35 @@ export class Game {
           }
           break;
         }
+        case "fire": {
+          const hw = o.w / 2;
+          if (
+            Math.abs(p.x - o.x) < hw * 0.94 + p.r * 0.4 &&
+            p.y > o.y - p.r * 0.5 &&
+            p.y < o.y + o.h + p.r * 0.5
+          )
+            death = "fire";
+          break;
+        }
+        case "fish": {
+          const fy = o.y + Math.sin(this.time * 1.1 + o.ph) * o.bob;
+          const fx = o.x + Math.sin(this.time * 0.55 + o.ph) * 60;
+          if (dist(p.x, p.y, fx, fy) < o.r + p.r - 4) death = "fish";
+          break;
+        }
+        case "drone": {
+          const dx = o.x + Math.sin(this.time * 0.7 + o.ph) * 78;
+          const dy = o.y + Math.sin(this.time * 1.4 + o.ph) * o.bob;
+          if (dist(p.x, p.y, dx, dy) < o.r + p.r - 5) death = "drone";
+          break;
+        }
+        case "portal": {
+          if (dist(p.x, p.y, o.x, o.y + 6) < o.r + p.r + 14 && !o.used) {
+            o.used = true;
+            this.reachPortal(o.x, o.y);
+          }
+          break;
+        }
         case "shield": {
           if (!o.got && dist(p.x, p.y, o.x, o.y) < 34 + p.r) {
             o.got = true;
@@ -987,14 +1250,8 @@ export class Game {
       p.vx *= c;
       p.vy *= c;
     }
-    this.trauma = Math.min(0.55, this.trauma + 0.22);
-    this.showAnnounce({
-      id: "boost" + Math.floor(this.time * 10),
-      kind: "boost",
-      title: "BOOST!",
-      sub: "speed burst",
-    });
-    this.popup(p.x, p.y - 50, "BOOST!", "#ff8ea1", 20);
+    this.trauma = Math.min(0.4, this.trauma + 0.16);
+    this.popup(p.x, p.y - 50, "BOOST", "#e8b64a", 18);
     this.parts.burst(x, y, "#ff7d9c", 16, 320, 3, 0.5, 200);
     this.parts.ring(x, y, "rgba(255,125,156,0.95)", 10, 0.5);
     this.sfx.boost();
@@ -1098,6 +1355,9 @@ export class Game {
     if (this.runT > 3.5 && this.show("street")) return;
     if (p.attached && this.runT > 6 && this.show("pump")) return;
 
+    // the gate is the goal of every level — explain it on approach
+    if (this.distM > 150 && this.show("portal")) return;
+
     // then whatever hazard or pickup is coming up next
     const lookahead = 760;
     let found: string | null = null;
@@ -1105,6 +1365,10 @@ export class Game {
       if (found) return;
       const ox = o.x;
       if (ox < p.x + 120 || ox > p.x + lookahead) return;
+      if (o.kind === "plat" && o.pod) {
+        if (!this.taught.has("pod") && ox < p.x + 420) found = "pod";
+        return;
+      }
       if (o.kind === "coin" && o.got) return;
       if (o.kind === "boost" && o.used) return;
       if ((o.kind === "shield" || o.kind === "magnet") && o.got) return;
@@ -1133,6 +1397,14 @@ export class Game {
     return true;
   }
 
+  /** true when the spider is just rocking on a line and would rather be let go */
+  private judgeHold(): boolean {
+    const p = this.player;
+    if (!p.attached || !this.holdWeb) return false;
+    const ang = (Math.atan2(p.x - p.ax, p.y - p.ay) * 180) / Math.PI;
+    return Math.abs(ang) > 55 || p.speed() < 190;
+  }
+
   /** replay the whole tutorial from scratch */
   resetTutorial() {
     this.taught.clear();
@@ -1141,6 +1413,65 @@ export class Game {
     } catch {
       /* ignore */
     }
+    this.emit();
+  }
+
+  /** strongest air current the spider is standing in right now */
+  private sampleWind(): { gain: number; vx: number; vy: number; strength: number } {
+    const p = this.player;
+    const out = { gain: 0, vx: 0, vy: 0, strength: 0 };
+    this.world.eachNear(p.x, (o) => {
+      if (o.kind !== "wind") return;
+      const fx = clamp(1 - Math.abs(p.x - o.x) / (o.w / 2), 0, 1);
+      const fy = clamp(1 - Math.abs(p.y - o.y) / (o.h / 2), 0, 1);
+      if (fx <= 0 || fy <= 0) return;
+      const edge = Math.min(fx, fy);
+      if (edge <= out.gain) return;
+      out.gain = edge;
+      out.vx = o.vx;
+      out.vy = o.vy;
+      out.strength = o.strength;
+    });
+    this.windGain = out.gain;
+    return out;
+  }
+
+  /** point the gate marker at the next floor gate ahead of the spider */
+  private refreshGate() {
+    const p = this.player;
+    let k = 0;
+    while (k < 400 && gateX(k) < p.x - 200) k++;
+    this.gateIndex = k;
+    const gx = gateX(k);
+    this.gateHole = { x: gx, y: this.world.lavaY(gx), r: 78 };
+  }
+
+  /** dove clean through the floor gate — level cleared */
+  private reachPortal(x: number, y: number) {
+    if (this.state !== "playing") return;
+    this.segStartM = this.distM;
+    this.missedGate = false;
+    this.state = "levelup";
+    this.levelT = 0;
+    this.player.attached = false;
+    this.player.vx *= 0.2;
+    this.player.vy = Math.max(this.player.vy, 120);
+    this.trauma = Math.min(0.8, this.trauma + 0.5);
+    this.sfx.portal();
+    this.sfx.levelUp();
+    this.parts.burst(x, y - 30, "#ffe79a", 26, 340, 3.4, 0.9, 380);
+    this.parts.ring(x, y - 30, "rgba(255,231,154,0.95)", 14, 0.7);
+    this.parts.ring(x, y - 30, "rgba(255,255,255,0.75)", 8, 0.5);
+    this.popup(x, y - 150, "GATE!", "#ffe79a", 40);
+    if (this.level + 1 > this.unlocked) {
+      this.unlocked = Math.min(MAX_LEVELS - 1, this.level + 1);
+      try {
+        localStorage.setItem(UNLOCK_KEY, String(this.unlocked));
+      } catch {
+        /* ignore */
+      }
+    }
+    this.sfx.setWind(0);
     this.emit();
   }
 
@@ -1171,6 +1502,13 @@ export class Game {
       this.gliding,
       this.announce?.id ?? "",
       Math.round(this.lowAlt * 5),
+      this.level,
+      this.unlocked,
+      this.theme,
+      Math.round(this.windGain * 4),
+      Math.round(this.distM / 5),
+      Math.round(this.segStartM / 5),
+      this.missedGate,
     ].join("|");
     if (key === this.lastKey) return;
     this.lastKey = key;
@@ -1191,6 +1529,13 @@ export class Game {
       gliding: this.gliding,
       announce: this.announce,
       lowAlt: this.lowAlt,
+      level: this.level,
+      unlocked: this.unlocked,
+      theme: this.theme,
+      windGain: this.windGain,
+      gateM: this.gateHole ? Math.round(this.gateHole.x / METER) : LEVEL_METERS,
+      segStart: this.segStartM,
+      missed: this.missedGate,
     });
   }
 }

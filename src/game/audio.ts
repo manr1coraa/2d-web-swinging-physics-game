@@ -191,6 +191,19 @@ export class Sfx {
     this.tone(f * 1.5, f * 1.5, 0.2, "sine", 0.1, 0.07);
   }
 
+  /** gate dive — whoosh down then a rising jingle */
+  portal() {
+    this.noise(0.7, 0.16, 300, "lowpass");
+    this.tone(180, 60, 0.6, "sine", 0.16);
+    const n = [523, 659, 784, 1046, 1318];
+    n.forEach((f, i) => this.tone(f, f, 0.2, "triangle", 0.11, 0.35 + i * 0.1));
+  }
+
+  levelUp() {
+    const n = [659, 880, 1174, 1568];
+    n.forEach((f, i) => this.tone(f, f, 0.22, "triangle", 0.12, i * 0.1));
+  }
+
   milestone() {
     this.tone(660, 660, 0.1, "triangle", 0.1);
     this.tone(990, 990, 0.16, "triangle", 0.09, 0.08);
