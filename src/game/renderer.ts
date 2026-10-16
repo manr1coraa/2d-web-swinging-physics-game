@@ -11,10 +11,21 @@ export class Renderer {
   private ropePts: { x: number; y: number; px: number; py: number }[] = [];
   private ropeSegs = 14;
 
+  private mainCanvas: HTMLCanvasElement;
+  private mainCtx: CanvasRenderingContext2D;
+  private offscreen: HTMLCanvasElement;
+  private pixelScale = 2;
+
   constructor(public canvas: HTMLCanvasElement) {
     const c = canvas.getContext("2d");
     if (!c) throw new Error("2d context unavailable");
-    this.ctx = c;
+    this.mainCanvas = canvas;
+    this.mainCtx = c;
+    this.offscreen = document.createElement("canvas");
+    const oc = this.offscreen.getContext("2d");
+    if (!oc) throw new Error("2d context unavailable");
+    this.ctx = oc;
+    oc.imageSmoothingEnabled = false;
     c.imageSmoothingEnabled = false;
   }
 
@@ -22,7 +33,15 @@ export class Renderer {
     const { ctx } = this;
     const w = g.vw;
     const h = g.vh;
-    ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
+    const ps = this.pixelScale;
+    const needW = Math.max(1, Math.round(w * g.dpr / ps));
+    const needH = Math.max(1, Math.round(h * g.dpr / ps));
+    if (this.offscreen.width !== needW || this.offscreen.height !== needH) {
+      this.offscreen.width = needW;
+      this.offscreen.height = needH;
+    }
+    ctx.setTransform(g.dpr / ps, 0, 0, g.dpr / ps, 0, 0);
+    ctx.imageSmoothingEnabled = false;
     ctx.imageSmoothingEnabled = false;
 
     const T = themeDef(g.theme);
@@ -53,6 +72,13 @@ export class Renderer {
     this.speedLines(g, T);
     this.dangerArrows(g);
     this.ambient(g, T);
+
+    // pixelated upscale to the real canvas
+    const mc = this.mainCtx;
+    mc.imageSmoothingEnabled = false;
+    mc.setTransform(1, 0, 0, 1, 0, 0);
+    mc.clearRect(0, 0, this.mainCanvas.width, this.mainCanvas.height);
+    mc.drawImage(this.offscreen, 0, 0, this.mainCanvas.width, this.mainCanvas.height);
   }
 
   /** red chevrons at the screen edge for hazards about to arrive */
