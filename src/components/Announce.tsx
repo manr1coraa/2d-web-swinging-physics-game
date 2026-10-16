@@ -1,58 +1,59 @@
 import { ShieldCheck, Magnet, Zap, Wind, Sparkles, Flag } from "lucide-react";
 import type { Announce } from "../game/engine";
 
+/* Flat, quiet callouts: a solid chip with a thin ring. No streaks, no bursts. */
 const THEME: Record<
   Announce["kind"],
-  { from: string; to: string; ring: string; icon: typeof Zap; text: string }
+  { bg: string; border: string; icon: typeof Zap; text: string; sub: string }
 > = {
   shield: {
-    from: "#2fe0b0",
-    to: "#17a380",
-    ring: "rgba(47,224,176,0.55)",
+    bg: "rgba(24,58,50,0.94)",
+    border: "rgba(64,214,170,0.55)",
     icon: ShieldCheck,
-    text: "#042c24",
+    text: "#8ff0d2",
+    sub: "#7fe4c6",
   },
   magnet: {
-    from: "#ff8ea1",
-    to: "#e8445f",
-    ring: "rgba(255,142,161,0.55)",
+    bg: "rgba(58,26,36,0.94)",
+    border: "rgba(232,96,130,0.55)",
     icon: Magnet,
-    text: "#3d0813",
+    text: "#ff9db0",
+    sub: "#ff8ea1",
   },
   boost: {
-    from: "#ffd36b",
-    to: "#ff7a2f",
-    ring: "rgba(255,180,90,0.55)",
+    bg: "rgba(58,44,20,0.94)",
+    border: "rgba(232,182,74,0.55)",
     icon: Zap,
-    text: "#432200",
+    text: "#f0c45f",
+    sub: "#e8b64a",
   },
   glide: {
-    from: "#7fe6ff",
-    to: "#2b9fd8",
-    ring: "rgba(73,216,255,0.55)",
+    bg: "rgba(18,42,60,0.94)",
+    border: "rgba(92,200,234,0.5)",
     icon: Wind,
-    text: "#042536",
+    text: "#8fdcff",
+    sub: "#7fd2f5",
   },
   perfect: {
-    from: "#8fd8ff",
-    to: "#4f7dff",
-    ring: "rgba(120,180,255,0.55)",
+    bg: "rgba(22,32,62,0.94)",
+    border: "rgba(122,164,255,0.5)",
     icon: Sparkles,
-    text: "#061a3a",
+    text: "#a9c2ff",
+    sub: "#93aefc",
   },
   level: {
-    from: "#ffe79a",
-    to: "#ff9d2e",
-    ring: "rgba(255,208,110,0.6)",
+    bg: "rgba(52,42,18,0.94)",
+    border: "rgba(232,182,74,0.55)",
     icon: Flag,
-    text: "#3a2100",
+    text: "#f2cd77",
+    sub: "#e8b64a",
   },
   save: {
-    from: "#9dffe4",
-    to: "#22b894",
-    ring: "rgba(47,224,176,0.55)",
+    bg: "rgba(24,58,50,0.94)",
+    border: "rgba(64,214,170,0.5)",
     icon: ShieldCheck,
-    text: "#042c24",
+    text: "#8ff0d2",
+    sub: "#7fe4c6",
   },
 };
 
@@ -64,41 +65,25 @@ export default function AnnounceOverlay({ data }: { data: Announce }) {
       key={data.id}
       className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center"
     >
-      {/* speed streak behind the badge */}
       <div
-        className="anim-streak absolute h-[112px] w-[min(680px,92vw)] rounded-full blur-2xl"
+        className="anim-announce flex items-center gap-2.5 rounded-xl border px-5 py-3 backdrop-blur-sm"
         style={{
-          background: `linear-gradient(90deg, transparent, ${th.ring}, transparent)`,
+          background: th.bg,
+          borderColor: th.border,
+          boxShadow: "0 12px 32px -16px rgba(0,0,0,0.9)",
         }}
-      />
-      {/* shockwave */}
-      <div
-        className="anim-announce-burst absolute h-28 w-28 rounded-full border-4"
-        style={{ borderColor: th.ring }}
-      />
-
-      <div className="anim-announce flex flex-col items-center">
-        <div
-          className="flex items-center gap-3 rounded-[22px] border-b-[5px] px-7 py-4"
-          style={{
-            background: `linear-gradient(180deg, ${th.from}, ${th.to})`,
-            borderColor: "rgba(0,0,0,0.35)",
-            boxShadow: `0 18px 50px -10px ${th.ring}, inset 0 2px 0 0 rgba(255,255,255,0.4)`,
-          }}
+      >
+        <Icon size={20} strokeWidth={2.4} style={{ color: th.text }} />
+        <span
+          className="font-display text-2xl font-extrabold uppercase leading-none tracking-[0.06em] sm:text-3xl"
+          style={{ color: th.text }}
         >
-          <Icon size={30} strokeWidth={2.6} style={{ color: th.text }} />
-          <span
-            className="font-display text-4xl font-extrabold uppercase leading-none tracking-[0.06em] sm:text-5xl"
-            style={{ color: th.text }}
-          >
-            {data.title}
-          </span>
-        </div>
+          {data.title}
+        </span>
       </div>
-
       <div
-        className="anim-announce-sub font-display mt-3 rounded-full bg-black/55 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.25em] backdrop-blur-sm"
-        style={{ color: th.from }}
+        className="anim-announce-sub font-display mt-2 text-[10px] font-bold uppercase tracking-[0.28em]"
+        style={{ color: th.sub }}
       >
         {data.sub}
       </div>

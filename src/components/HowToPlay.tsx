@@ -231,7 +231,7 @@ export default function HowToPlay({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {/* controls */}
           <div className="rounded-2xl bg-white/5 p-4">
-            <div className="font-display text-[11px] font-extrabold uppercase tracking-[0.25em] text-[#49d8ff]">
+            <div className="font-display text-[11px] font-extrabold uppercase tracking-[0.25em] text-[#8fdcff]">
               Controls
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -290,21 +290,15 @@ export default function HowToPlay({
           </div>
 
           {/* goal of a level */}
-          <div className="mt-4 rounded-2xl border border-[#ffc53d]/25 bg-[#ffc53d]/8 p-4">
-            <div className="font-display text-[11px] font-extrabold uppercase tracking-[0.25em] text-[#ffc53d]">
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="font-display text-[11px] font-bold uppercase tracking-[0.22em] text-[#f0c45f]">
               Goal of every level
             </div>
-            <p className="mt-2 text-xs font-semibold leading-snug text-white/60">
-              Ride out <b className="text-white/90">250 m</b>, then dive through
-              the <b className="text-[#ffe79a]">glowing hole</b> in the street.
-              The gate drops you into the next world — jungle, trench, desert,
-              glacier, volcano, orbit or neon — and your progress is stored
-              automatically. Hit the avenue instead and that is a splat, so line
-              the dive up early: the beacon and the bouncing chevrons mark the way.
-            </p>
-            <p className="mt-2 text-xs font-semibold leading-snug text-white/60">
-              Back in the menu you can <b className="text-white/90">pick any
-              unlocked world</b> and replay it from the start.
+            <p className="mt-2 text-xs font-semibold leading-snug text-white/55">
+              Ride out <b className="text-white/85">250 m</b>, then dive through
+              the glowing hole in the street. The gate opens the next world and
+              your progress is saved. Miss it and the next gate is 250 m ahead.
+              In the menu you can replay any world you have opened.
             </p>
           </div>
 

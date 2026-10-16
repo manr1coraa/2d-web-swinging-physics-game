@@ -38,8 +38,7 @@ export type Obj =
   | { kind: "fire"; x: number; y: number; w: number; h: number }
   | { kind: "fish"; x: number; y: number; r: number; bob: number; ph: number; vx: number }
   | { kind: "drone"; x: number; y: number; r: number; bob: number; ph: number; vx: number }
-  | { kind: "portal"; x: number; y: number; r: number; used: boolean }
-  | { kind: "dip"; x: number; y: number; w: number; depth: number };
+  | { kind: "portal"; x: number; y: number; r: number; used: boolean };
 
 export interface Chunk {
   i: number;
@@ -93,11 +92,27 @@ export class World {
     while (this.pts.length < 16) this.growPt();
   }
 
+  /** how tall the corridor is in this theme, and how much the roof snakes */
+  private shape(): { lo: number; hi: number; amp: number } {
+    switch (this.theme) {
+      case "city":
+      case "neon":
+        return { lo: 110, hi: 258, amp: 150 };
+      case "underwater":
+        return { lo: 78, hi: 186, amp: 104 };
+      case "jungle":
+        return { lo: 92, hi: 214, amp: 120 };
+      default:
+        return { lo: 96, hi: 226, amp: 126 };
+    }
+  }
+
   private growPt() {
     const i = this.pts.length;
     const prev = this.pts[i - 1];
-    const amp = i < 8 ? 44 : i < 16 ? 95 : 150;
-    const y = clamp(prev + (hash(i * 3.71 + 11.3) - 0.5) * amp, 92, 258);
+    const sh = this.shape();
+    const amp = i < 8 ? 40 : i < 16 ? sh.amp * 0.66 : sh.amp;
+    const y = clamp(prev + (hash(i * 3.71 + 11.3) - 0.5) * amp, sh.lo, sh.hi);
     this.pts.push(y);
   }
 
@@ -189,19 +204,11 @@ export class World {
         const py = clamp(290 + r(4 + k) * 160, 275, 460);
         plats.push({ x: px, y: py, w: 140 + r(9 + k) * 90 });
       }
-    } else if (r(3) < 0.18 + 0.18 * t) {
+    } else if (r(3) < 0.1 + 0.12 * t) {
       plats.push({
         x: x0 + 80 + r(4) * (this.cw - 160),
-        y: clamp(270 + r(5) * 180, 260, 450),
+        y: clamp(280 + r(5) * 180, 265, 455),
         w: 130 + r(6) * 90,
-      });
-    }
-    // extra safety platform in every chunk at mid difficulty to avoid dead gaps
-    if (!isGap && r(33) < 0.35) {
-      plats.push({
-        x: x0 + this.cw / 2 + (r(34) - 0.5) * 60,
-        y: clamp(320 + r(35) * 120, 300, 440),
-        w: 110 + r(36) * 70,
       });
     }
     for (const p of plats) objs.push({ kind: "plat", x: p.x, y: p.y, w: p.w, h: 24 });
@@ -217,8 +224,8 @@ export class World {
           ? r(5) < 0.25
             ? 1
             : 0
-          : r(5) < 0.22 + 0.3 * t
-            ? r(6) < 0.1 + 0.4 * t
+          : r(5) < 0.16 + 0.22 * t
+            ? r(6) < 0.08 + 0.3 * t
               ? 2
               : 1
             : 0;
@@ -228,10 +235,14 @@ export class World {
       if (spires.some((sx) => Math.abs(sx - px) < 150)) continue;
       spires.push(px);
       const base = this.lavaY(px) + 34;
-      const hgt = (160 + r(10 + k) * 160) * (0.75 + 0.45 * t);
+      const roof = this.ceilY(px);
+      const room = base - roof;
+      const hgt = Math.min(
+        (150 + r(10 + k) * 150) * (0.75 + 0.45 * t),
+        room - 340, // keep a flyable corridor over every tower
+      );
       let tip = base - hgt;
-      // always leave a flyable corridor between the ceiling and the tip
-      tip = Math.max(tip, this.ceilY(px) + 178);
+      tip = Math.max(tip, roof + 300);
       tip = Math.min(tip, base - 120);
       objs.push({ kind: "spire", x: px, tip, base, w: 28 + r(12 + k) * 20 });
     }
@@ -239,7 +250,7 @@ export class World {
     // ---- stalactites / vines / ice shards ----
     if (!isGap && i > 5 && !isGateChunk) {
       const count =
-        i < 10 ? (r(8) < 0.4 ? 1 : 0) : Math.floor(r(8) * (0.7 + 1.9 * t) + t * 1.1);
+        i < 10 ? (r(8) < 0.3 ? 1 : 0) : Math.floor(r(8) * (0.55 + 1.5 * t) + t * 0.9);
       for (let k = 0; k < count; k++) {
         const sx = x0 + 40 + r(20 + k * 3) * (this.cw - 80);
         if (spires.some((px) => Math.abs(px - sx) < 80)) continue;
@@ -249,7 +260,7 @@ export class World {
     }
 
     // ---- saws / drones ----
-    if (!isGateChunk && i > 12 && r(9) < 0.1 + 0.22 * t) {
+    if (!isGateChunk && i > 12 && r(9) < 0.07 + 0.16 * t) {
       const sx = x0 + 90 + r(22) * (this.cw - 180);
       if (!spires.some((px) => Math.abs(px - sx) < 110)) {
         const cy = clamp(this.ceilY(sx) + 150 + r(23) * 190, this.ceilY(sx) + 130, this.lavaY(sx) - 140);
@@ -259,7 +270,7 @@ export class World {
 
     // ---- drones (moving) in later levels ----
     if (this.theme === "city" || this.theme === "neon" || this.theme === "space") {
-      if (!isGateChunk && i > 18 && r(50) < 0.14 + 0.16 * t) {
+      if (!isGateChunk && i > 18 && r(50) < 0.1 + 0.1 * t) {
         const dx = x0 + 90 + r(51) * (this.cw - 180);
         const dy = clamp(this.ceilY(dx) + 160 + r(52) * 180, this.ceilY(dx) + 140, this.lavaY(dx) - 160);
         objs.push({ kind: "drone", x: dx, y: dy, r: 20 + r(53) * 6, bob: 12 + r(54) * 20, ph: r(55) * Math.PI * 2, vx: (r(56) > 0.5 ? 1 : -1) * (40 + r(57) * 60) });
@@ -268,98 +279,81 @@ export class World {
 
     // ---- fish (underwater) ----
     if (this.theme === "underwater") {
-      if (!isGateChunk && i > 6 && r(60) < 0.35 + 0.25 * t) {
+      if (!isGateChunk && i > 6 && r(60) < 0.2 + 0.14 * t) {
         const fx = x0 + 60 + r(61) * (this.cw - 120);
         const fy = clamp(this.ceilY(fx) + 180 + r(62) * 220, this.ceilY(fx) + 150, this.lavaY(fx) - 120);
         objs.push({ kind: "fish", x: fx, y: fy, r: 18 + r(63) * 6, bob: 6 + r(64) * 16, ph: r(65) * Math.PI * 2, vx: (r(66) > 0.5 ? 1 : -1) * (50 + r(67) * 70) });
       }
     }
 
-    // ---- fire on roofs ----
-    if (this.theme === "volcano" || this.theme === "city" || this.theme === "neon") {
-      if (!isGateChunk && i > 10 && r(70) < 0.2 + 0.2 * t) {
-        const fx = x0 + 60 + r(71) * (this.cw - 180);
-        objs.push({ kind: "fire", x: fx, y: this.ceilY(fx) + 2, w: 60 + r(72) * 80, h: 26 + r(73) * 20 });
-      }
-    }
-
-    // ---- the gate intake: a funnel that sucks you down into the hole ----
-    if (isGateChunk) {
-      for (let k = 0; k < GATE_COUNT; k++) {
-        const gx = gateX(k);
-        if (gx < x0 - 700 || gx > x1 + 200) continue;
-        // a lift before the hole so you always arrive with time to line up
-        const lx = gx - 560;
-        objs.push({
-          kind: "wind",
-          x: lx,
-          y: clamp(this.ceilY(lx) + 300, this.ceilY(lx) + 180, this.lavaY(lx) - 220),
-          w: 260,
-          h: 320,
-          vx: 230,
-          vy: -140,
-          strength: 520,
-        });
-        // and a down-draft funnel that aims you into the mouth — it stops at
-        // the hole, so sailing over the top never dumps you on the sidewalk
-        const floorY = this.lavaY(gx);
-        const roofY = this.ceilY(gx);
-        const midY = clamp((roofY + floorY) / 2 + 70, roofY + 130, floorY - 150);
-        objs.push({
-          kind: "wind",
-          x: gx - 130,
-          y: midY,
-          w: 260,
-          h: Math.max(320, (floorY - roofY) * 0.8),
-          vx: 120,
-          vy: 330,
-          strength: 740,
-        });
-      }
-    }
-
-    // ---- air currents (wind zones) ----
-    const windCount = this.theme === "underwater" ? 2 : r(80) < 0.7 + 0.2 * t ? (r(81) < 0.45 ? 2 : 1) : 0;
-    for (let k = 0; k < windCount; k++) {
-      const wx = x0 + 40 + r(82 + k * 4) * (this.cw - 120);
-      const wy = clamp(200 + r(83 + k * 4) * 300, 190, 500);
-      const ww = 190 + r(84 + k * 4) * 150;
-      const wh = 150 + r(85 + k * 4) * 150;
-      // mostly forward-and-up flows (the fun ones) with the odd downdraft
-      const ang = (r(86 + k * 4) < 0.75 ? -0.75 : 0.9) * Math.PI * (0.15 + r(88 + k * 4) * 0.5);
-      const strength = 420 + r(87 + k * 4) * 420;
+    // ---- burning roof line: never two chunks in a row, so flames stay rare ----
+    const prevHadFire =
+      prev !== undefined && prev.objs.some((o) => o.kind === "fire");
+    const fieryTheme = this.theme === "volcano" || this.theme === "neon";
+    if (fieryTheme && !prevHadFire && !isGateChunk && i > 10 && r(70) < 0.34 + 0.18 * t) {
+      const fx = x0 + 70 + r(71) * (this.cw - 200);
       objs.push({
-        kind: "wind",
-        x: wx,
-        y: wy,
-        w: ww,
-        h: wh,
-        vx: Math.cos(ang) * strength,
-        vy: Math.sin(ang) * strength * 0.6 - 60,
-        strength,
+        kind: "fire",
+        x: fx,
+        y: this.ceilY(fx) + 2,
+        w: 70 + r(72) * 80,
+        h: 26 + r(73) * 18,
       });
+    }
+
+    // ---- air current: at most one per chunk, never in two chunks in a row,
+    // so two currents can never overlap or fight each other ----
+    const prevHadWind =
+      prev !== undefined && prev.objs.some((o) => o.kind === "wind");
+    const wantWind =
+      !isGateChunk && !prevHadWind && i > 3 && r(80) < 0.32 + 0.1 * t;
+    if (wantWind) {
+      const wx = x0 + this.cw * 0.5 + (r(82) - 0.5) * 110;
+      // the whole band has to sit in open air: under the roof, above the street
+      const roof = this.ceilY(wx) + (isGap ? 0 : 0);
+      const floor = this.lavaY(wx);
+      const maxH = Math.max(120, Math.min(230, (floor - roof) * 0.42));
+      const hgt = 140 + r(85) * (maxH - 140 > 0 ? maxH - 140 : 10);
+      const lo = roof + 70 + hgt / 2;
+      const hi = floor - 150 - hgt / 2;
+      if (hi > lo) {
+        const wy = clamp(lo + r(83) * (hi - lo), lo, hi);
+        const strength = 300 + r(87) * 260;
+        const ang = -Math.PI * (0.14 + r(86) * 0.3); // always forward and up
+        objs.push({
+          kind: "wind",
+          x: wx,
+          y: wy,
+          w: 190 + r(84) * 80,
+          h: hgt,
+          vx: Math.cos(ang) * strength,
+          vy: Math.sin(ang) * strength,
+          strength,
+        });
+      }
     }
 
     // ---- coins ----
     const coinRoll = r(30);
     const plat0 = plats[0];
-    if (plat0 && coinRoll < 0.75) {
-      const n = 4;
+    if (plat0 && coinRoll < 0.55) {
+      // a short arc over the platform
+      const n = 3;
       for (let k = 0; k < n; k++) {
-        const fx = plat0.x - 66 + (k / (n - 1)) * 132;
-        const fy = plat0.y - 84 - Math.sin((k / (n - 1)) * Math.PI) * 26;
+        const fx = plat0.x - 40 + (k / (n - 1)) * 80;
+        const fy = plat0.y - 80 - Math.sin((k / (n - 1)) * Math.PI) * 20;
         objs.push({ kind: "coin", x: fx, y: fy, got: false });
       }
-    } else if (coinRoll < 0.92) {
-      const cx = x0 + 110 + r(31) * (this.cw - 220);
+    } else if (coinRoll < 0.74) {
+      const cx = x0 + 130 + r(31) * (this.cw - 260);
       const lo = this.ceilY(cx) + 150;
       const hi = this.lavaY(cx) - 150;
       if (hi - lo > 60) {
         const cy = clamp(lo + r(32) * (hi - lo), lo + 20, hi - 10);
-        const n = 3 + Math.floor(r(33) * 2);
+        const n = 3;
         for (let k = 0; k < n; k++) {
-          const fx = cx + (k - (n - 1) / 2) * 36;
-          const fy = cy - Math.cos(((k - (n - 1) / 2) / n) * Math.PI) * 34;
+          const fx = cx + (k - 1) * 34;
+          const fy = cy - Math.cos(((k - 1) / n) * Math.PI) * 26;
           if (spires.some((px) => Math.abs(px - fx) < 70)) continue;
           objs.push({ kind: "coin", x: fx, y: fy, got: false });
         }
@@ -367,7 +361,7 @@ export class World {
     }
 
     // ---- boost rings ----
-    const wantBoost = i === 4 || (i > 2 && r(40) < 0.25 + 0.14 * t);
+    const wantBoost = i === 4 || (i > 2 && r(40) < 0.16 + 0.1 * t);
     if (wantBoost) {
       const attempts = i === 5 ? 6 : 2;
       for (let a = 0; a < attempts; a++) {
@@ -401,7 +395,7 @@ export class World {
       for (let e = 0; e < edges.length - 1; e++) {
         const a = edges[e];
         const b = edges[e + 1];
-        if (b - a <= 300) continue;
+        if (b - a <= 400) continue;
         const n = Math.max(1, Math.round((b - a) / 270) - 1);
         for (let k = 0; k < n; k++) {
           const px = a + ((k + 1) * (b - a)) / (n + 1);
@@ -430,20 +424,6 @@ export class World {
     // ---- the floor gate (one per 250 m stretch) ----
     if (gateHere !== null) {
       objs.push({ kind: "portal", x: gateHere, y: this.lavaY(gateHere), r: 78, used: false });
-    }
-
-    // ---- sinkhole marker, only where the street really caves in ----
-    let pitX = -1;
-    let pitD = 0;
-    for (let s = 0; s <= this.cw; s += 24) {
-      const pd = this.pitDepthAt(x0 + s);
-      if (pd > pitD) {
-        pitD = pd;
-        pitX = x0 + s;
-      }
-    }
-    if (pitX >= 0 && pitD > 26) {
-      objs.push({ kind: "dip", x: pitX, y: this.lavaY(pitX), w: 110 + pitD * 1.8, depth: pitD });
     }
 
     return { i, x0, x1, gapA, gapB, isGap, objs };

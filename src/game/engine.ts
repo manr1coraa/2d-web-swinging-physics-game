@@ -185,9 +185,9 @@ export interface Popup {
 
 const G = 1930; // gravity px/s^2 — lighter, floatier arcs
 const FWD = 175; // forward push — ramps up with distance
-const FWD_ATT = 140; // constant swing drive — a held swing creeps forward
+const FWD_ATT = 95; // gentle constant swing nudge
 const MAXV = 1300;
-const ROPE_MAX = 470; // must exceed the corridor height or low flight is a dead end
+const ROPE_MAX = 440; // must exceed the corridor height or low flight is a dead end
 const PUMP = 700; // tangential self-pump — keeps the swing alive
 const REEL = 90; // rope reel speed while pumping
 const GLIDE_G = 0.28; // gravity multiplier while gliding
@@ -240,7 +240,7 @@ export class Game {
   graceT = 0;
   lowAlt = 0;
   windGain = 0; // 0..1 how deep the player is inside an air current
-  ropeAssist = 0; // 0..1 how hard the safety reel is working
+  private glideAnnounced = false;
   levelT = 0;
   gateHole: { x: number; y: number; r: number } | null = null;
   gateIndex = 0;
@@ -351,8 +351,8 @@ export class Game {
     this.autoRetryT = 0;
     this.attachTime = -10;
     this.pumpFx = 0;
-    this.ropeAssist = 0;
     this.windGain = 0;
+    this.glideAnnounced = false;
     this.missedGate = false;
     this.segStartM = 0;
     this.gliding = false;
@@ -374,12 +374,14 @@ export class Game {
     // onboarding: first swing is free — shows what to do
     const ax = this.player.x + 135;
     this.player.attach(ax, this.world.ceilY(ax) + 2);
-    this.showAnnounce({
-      id: `level${this.level}-${Math.floor(this.time * 7)}`,
-      kind: "boost",
-      title: `LEVEL ${this.level + 1}`,
-      sub: this.theme.toUpperCase(),
-    });
+    if (this.level > 0) {
+      this.showAnnounce({
+        id: `level${this.level}-${Math.floor(this.time * 7)}`,
+        kind: "boost",
+        title: `LEVEL ${this.level + 1}`,
+        sub: this.theme.toUpperCase(),
+      });
+    }
     this.emit();
   }
 
@@ -436,12 +438,15 @@ export class Game {
     this.glideHold = on;
     if (on && this.state === "playing") {
       if (this.player.attached) this.release(false);
-      this.showAnnounce({
-        id: "glide" + Math.floor(this.time * 10),
-        kind: "glide",
-        title: "GLIDE MODE",
-        sub: "web-wings deployed",
-      });
+      if (!this.glideAnnounced) {
+        this.glideAnnounced = true;
+        this.showAnnounce({
+          id: "glide" + this.level,
+          kind: "glide",
+          title: "GLIDE MODE",
+          sub: "web-wings deployed",
+        });
+      }
       this.sfx.magnetUp();
     }
     this.emit();
@@ -573,16 +578,18 @@ export class Game {
       p.vx *= 1.045;
       p.vy *= 1.045;
       this.perfectCombo = Math.min(9, this.perfectCombo + 1);
-      this.popup(
-        p.x,
-        p.y - 52,
-        this.perfectCombo > 1 ? `PERFECT ×${this.perfectCombo}` : "PERFECT!",
-        "#7df0ff",
-        24,
-      );
+      if (this.perfectCombo === 1 || this.perfectCombo % 3 === 0) {
+        this.popup(
+          p.x,
+          p.y - 48,
+          this.perfectCombo > 1 ? `PERFECT ×${this.perfectCombo}` : "PERFECT",
+          "#7df0ff",
+          18,
+        );
+      }
       this.parts.ring(p.x, p.y, "rgba(125,240,255,0.9)", 8, 0.45);
       this.sfx.perfect(this.perfectCombo);
-      if (this.perfectCombo >= 3)
+      if (this.perfectCombo === 4 || this.perfectCombo === 7)
         this.showAnnounce({
           id: "perfect" + this.perfectCombo,
           kind: "perfect",
@@ -657,14 +664,14 @@ export class Game {
 
     // ---- second pass: walk the actual swing arc on the shortlisted anchors.
     // A coarse sample can slip straight over a 30px spire, so this one is fine.
-    const shortlist = Math.min(cands.length, 8);
+    const shortlist = Math.min(cands.length, 6);
     let best: { x: number; y: number; d: number; score: number } | null = null;
     for (let i = 0; i < shortlist; i++) {
       const c = cands[i];
       const a0 = Math.atan2(p.x - c.x, p.y - c.y);
       const aEnd = Math.PI / 2 + Math.PI * 0.42; // through the bottom and out the far upswing
       let penalty = 0;
-      const N = 26;
+      const N = 16;
       for (let k = 1; k <= N; k++) {
         const a = a0 + ((aEnd - a0) * k) / N;
         const hx = c.x + Math.sin(a) * c.d;
@@ -675,7 +682,7 @@ export class Game {
       if (!best || c.score < best.score) best = c;
       // early out: nothing further down the list can beat what we already have
       const next = cands[i + 1];
-      if (best && next && best.score + 120 * N < next.score) break;
+      if (best && next && best.score + 120 * 16 < next.score) break;
     }
     return best ? { x: best.x, y: best.y, d: best.d } : null;
   }
@@ -699,9 +706,9 @@ export class Game {
     return true;
   }
 
-  private popup(x: number, y: number, str: string, color: string, size = 22) {
-    if (this.texts.length > 8) this.texts.shift();
-    this.texts.push({ x, y, str, color, size, life: 0.95, max: 0.95 });
+  private popup(x: number, y: number, str: string, color: string, size = 20) {
+    if (this.texts.length > 5) this.texts.shift();
+    this.texts.push({ x, y, str, color, size, life: 0.7, max: 0.7 });
   }
 
   /* ---------------- core loop ---------------- */
@@ -870,8 +877,8 @@ export class Game {
       const dx = p.x - gh.x;
       const dy = p.y - (gh.y - 18);
       const dd = Math.hypot(dx, dy);
-      if (dd < 380 && dd > 1 && p.x < gh.x + 60) {
-        const pull = Math.pow(1 - dd / 380, 2) * 2100;
+      if (dd < 320 && dd > 1 && p.x < gh.x + 60) {
+        const pull = Math.pow(1 - dd / 320, 2) * 1250;
         p.vx -= (dx / dd) * pull * dt;
         p.vy -= (dy / dd) * pull * dt;
       }
@@ -919,7 +926,7 @@ export class Game {
     const ms = Math.floor(this.distM / 100) * 100;
     if (ms > 0 && ms > this.lastMilestone) {
       this.lastMilestone = ms;
-      this.popup(p.x, p.y - 90, `${ms} M!`, "#ffd23f", 34);
+      this.popup(p.x, p.y - 90, `${ms} M`, "#e8b64a", 26);
       this.sfx.milestone();
     }
 
@@ -941,7 +948,7 @@ export class Game {
       this.state === "playing";
     this.gliding = glide;
     const wind = this.sampleWind();
-    p.vy += (glide ? G * GLIDE_G : G) * h * (1 - 0.62 * wind.gain);
+    p.vy += (glide ? G * GLIDE_G : G) * h * (1 - 0.25 * wind.gain);
     if (glide) {
       // speed turns into altitude: a fast glide climbs, a slow one sinks
       const liftF = clamp((Math.abs(p.vx) - 270) / 620, 0, 1);
@@ -958,21 +965,20 @@ export class Game {
       if (p.vy > targetVy) p.vy += (targetVy - p.vy) * Math.min(1, h * rate);
       p.vx += GLIDE_FWD * h;
     }
+    // A current is honest drag: the air pulls the body toward its own
+    // velocity. Strong enough in the core to carry you, gentle at the edges.
     if (wind.gain > 0.01) {
-      const k = wind.gain * wind.gain * (wind.strength / 900);
-      const pull = Math.min(1, k * h * 11);
-      p.vx += (wind.vx - p.vx) * pull;
-      p.vy += (wind.vy - p.vy) * pull;
-      p.vx += wind.vx * k * h * 2.4;
-      p.vy += wind.vy * k * h * 2.4;
+      const c = wind.gain * wind.gain * 12; // 1/s
+      const k = Math.min(1, c * h);
+      p.vx += (wind.vx - p.vx) * k;
+      p.vy += (wind.vy - p.vy) * k;
     }
 
     // pace quickens the further you go — gently
     const fwd = p.attached
       ? FWD_ATT + Math.min(50, this.distM * 0.25)
       : FWD + Math.min(120, this.distM * 0.65);
-    // inside a current the flow rules, not the spider's own drift
-    p.vx += fwd * h * (p.grounded ? 2.2 : 1) * (1 - 0.65 * wind.gain);
+    p.vx += fwd * h * (p.grounded ? 2.2 : 1);
     // gentle air drag
     p.vx *= Math.pow(0.5, h * (p.attached ? 0.045 : 0.13));
     p.vy *= Math.pow(0.5, h * 0.05);
@@ -1025,20 +1031,9 @@ export class Game {
 
       // classic pendulum pumping: shorten going up, lengthen going down
       const rising = p.vy < 0;
-      const minRope = Math.max(70, p.rope0 - 100);
-      let maxRope = p.rope0 + (this.holdWeb ? 90 : 26);
-      // ---- street scrape guard: the spider hauls the line in before the
-      // bottom of the arc can reach the avenue. Releasing is still on you.
-      const floor = this.world.lavaY(p.x);
-      const bottom = p.ay + p.rope + p.r + 26;
-      if (bottom > floor) {
-        maxRope = Math.min(maxRope, Math.max(90, floor - p.r - 26 - p.ay));
-        this.ropeAssist = Math.min(1, this.ropeAssist + h * 3);
-      } else {
-        this.ropeAssist = Math.max(0, this.ropeAssist - h * 2);
-      }
+      const minRope = Math.max(70, p.rope0 - 85);
+      const maxRope = p.rope0 + (this.holdWeb ? 70 : 20);
       p.rope = clamp(p.rope + (rising ? -REEL : REEL * 0.8) * h, minRope, maxRope);
-      if (p.rope > maxRope) p.rope = maxRope;
     } else {
       this.pumpFx = 0;
     }
@@ -1255,14 +1250,8 @@ export class Game {
       p.vx *= c;
       p.vy *= c;
     }
-    this.trauma = Math.min(0.55, this.trauma + 0.22);
-    this.showAnnounce({
-      id: "boost" + Math.floor(this.time * 10),
-      kind: "boost",
-      title: "BOOST!",
-      sub: "speed burst",
-    });
-    this.popup(p.x, p.y - 50, "BOOST!", "#ff8ea1", 20);
+    this.trauma = Math.min(0.4, this.trauma + 0.16);
+    this.popup(p.x, p.y - 50, "BOOST", "#e8b64a", 18);
     this.parts.burst(x, y, "#ff7d9c", 16, 320, 3, 0.5, 200);
     this.parts.ring(x, y, "rgba(255,125,156,0.95)", 10, 0.5);
     this.sfx.boost();

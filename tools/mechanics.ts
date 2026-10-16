@@ -35,42 +35,67 @@ function frames(g: Game, n: number, t0 = { t: 0 }) {
 /* ---------- 1. air currents actually push ---------- */
 {
   const g = newGame(0);
-  g.world.ensure(6000);
+  g.world.ensure(14000);
   let wind: { x: number; y: number; vx: number; vy: number; strength: number } | null = null;
-  g.world.eachNear(3000, (o) => {
-    if (o.kind === "wind" && !wind) wind = o;
-  });
+  for (let x = 1000; x < 13000 && !wind; x += 240) {
+    g.world.eachNear(x, (o) => {
+      if (o.kind === "wind" && !wind) wind = o;
+    });
+  }
   ok("world contains air-current zones", !!wind);
   if (wind) {
-    const w = wind as { x: number; y: number; vx: number; vy: number; strength: number };
+    const w = wind as { x: number; y: number; w: number; h: number; vx: number; vy: number; strength: number };
     const p = g.player;
+    // pin the spider in the core of the current and watch what the air does
     p.attached = false;
-    p.x = w.x;
-    p.y = w.y;
     p.vx = 0;
     p.vy = 0;
     const t0 = { t: 0 };
-    const before = Math.hypot(p.vx - w.vx, p.vy - w.vy);
-    frames(g, 24, t0);
+    const before = Math.hypot(w.vx, w.vy);
+    let gain = 0;
+    let vyMid = 0;
+    for (let f = 0; f < 24; f++) {
+      p.x = w.x;
+      p.y = w.y;
+      frames(g, 1, t0);
+      gain = Math.max(gain, g.windGain);
+      if (f === 11) vyMid = p.vy;
+      if (g.state !== "playing") break;
+    }
     const after = Math.hypot(p.vx - w.vx, p.vy - w.vy);
     const aligned = (p.vx * w.vx + p.vy * w.vy) / (Math.hypot(p.vx, p.vy) * Math.hypot(w.vx, w.vy) || 1);
-    const gain = g.windGain;
     ok(
-      "wind drags the player toward the flow",
-      after < before * 0.75 && aligned > 0.62 && gain > 0.15,
-      `Δv=${before.toFixed(0)}→${after.toFixed(0)} align=${aligned.toFixed(2)} gain=${gain.toFixed(2)}`,
+      "a current drags the player into its flow",
+      after < before * 0.5 && aligned > 0.85 && gain > 0.6,
+      `Δv=${before.toFixed(0)}→${after.toFixed(0)} align=${aligned.toFixed(2)} coreGain=${gain.toFixed(2)}`,
     );
-    ok("the current holds the spider aloft (reduced gravity)", p.vy > -260 && p.y < w.y + w.h, `vy=${p.vy.toFixed(0)}`);
+    ok(
+      "a current of rising air carries the spider up",
+      p.vy < 0 && p.vy < vyMid,
+      `vy ${vyMid.toFixed(0)} → ${p.vy.toFixed(0)} over 0.4s (flow vy=${w.vy.toFixed(0)})`,
+    );
+    ok(
+      "currents never overlap (one per chunk, never back-to-back)",
+      (() => {
+        let overlapping = 0;
+        for (const [i, c] of g.world.chunks) {
+          const here = c.objs.filter((o) => o.kind === "wind").length;
+          const next = g.world.chunks.get(i + 1)?.objs.filter((o) => o.kind === "wind").length ?? 0;
+          if (here > 1 || (here > 0 && next > 0)) overlapping++;
+        }
+        return overlapping === 0;
+      })(),
+    );
   }
   g.dispose();
 }
 
 /* ---------- 2. burning roofs kill ---------- */
 {
-  const g = newGame(0);
-  g.world.ensure(9000);
+  const g = newGame(5); // volcano rim — burning roofs live here
+  g.world.ensure(14000);
   let fire: { x: number; y: number; w: number; h: number } | null = null;
-  for (let x = 0; x < 12000 && !fire; x += 240) {
+  for (let x = 0; x < 14000 && !fire; x += 240) {
     g.world.eachNear(x, (o) => {
       if (o.kind === "fire" && !fire) fire = o;
     });

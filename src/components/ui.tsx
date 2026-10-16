@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** chunky tactile button with a solid bottom edge — indie arcade feel */
+/** tactile button with a solid bottom edge — flat colours, no gradients */
 export function ChunkyButton({
   children,
   onClick,
@@ -18,22 +18,22 @@ export function ChunkyButton({
 }) {
   const tones = {
     primary:
-      "bg-[#ff5172] text-white border-[#b81f42] shadow-[0_8px_0_0_#b81f42,0_18px_34px_-10px_rgba(255,81,114,0.75)] hover:bg-[#ff6682]",
-    gold: "bg-[#ffc53d] text-[#4a2e00] border-[#b8801a] shadow-[0_8px_0_0_#b8801a,0_18px_34px_-12px_rgba(255,197,61,0.7)] hover:bg-[#ffd25f]",
-    dark: "bg-[#222a52] text-white border-[#121734] shadow-[0_8px_0_0_#121734,0_16px_30px_-14px_rgba(0,0,0,0.9)] hover:bg-[#2b3463]",
+      "bg-[#e8465f] text-white border-[#8f1f33] shadow-[0_4px_0_0_#8f1f33] hover:bg-[#f4576f]",
+    gold: "bg-[#e8b64a] text-[#2e1f00] border-[#8f6a12] shadow-[0_4px_0_0_#8f6a12] hover:bg-[#f0c45f]",
+    dark: "bg-[#1c2340] text-white/90 border-[#0c1024] shadow-[0_4px_0_0_#0c1024] hover:bg-[#232b4c]",
     ghost:
-      "bg-white/8 text-white/80 border-white/10 shadow-[0_6px_0_0_rgba(255,255,255,0.07)] hover:bg-white/14 hover:text-white",
+      "bg-white/6 text-white/70 border-white/10 shadow-[0_3px_0_0_rgba(255,255,255,0.06)] hover:bg-white/12 hover:text-white",
   };
   const sizes = {
-    sm: "px-4 py-2 text-xs gap-1.5",
-    md: "px-6 py-3 text-sm gap-2",
-    lg: "px-9 py-4 text-base gap-2.5",
+    sm: "px-3.5 py-2 text-[11px] gap-1.5",
+    md: "px-5 py-2.5 text-xs gap-2",
+    lg: "px-7 py-3.5 text-sm gap-2.5",
   };
   return (
     <button
       onClick={onClick}
       aria-label={ariaLabel}
-      className={`font-display inline-flex items-center justify-center rounded-2xl border-b-2 font-extrabold uppercase tracking-[0.1em] transition-all duration-100 active:translate-y-[6px] active:shadow-none ${tones[tone]} ${sizes[size]} ${className}`}
+      className={`font-display inline-flex items-center justify-center rounded-xl border-b font-bold uppercase tracking-[0.12em] transition-all duration-100 active:translate-y-[4px] active:shadow-none ${tones[tone]} ${sizes[size]} ${className}`}
     >
       {children}
     </button>
@@ -59,10 +59,10 @@ export function RoundButton({
       onClick={onClick}
       title={title}
       aria-label={ariaLabel}
-      className={`flex h-11 w-11 items-center justify-center rounded-2xl border-b-2 transition-all duration-100 active:translate-y-[4px] active:shadow-none ${
+      className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors duration-100 ${
         active
-          ? "border-[#b81f42] bg-[#ff5172] text-white shadow-[0_5px_0_0_#b81f42]"
-          : "border-black/40 bg-[#1b2246]/85 text-white/75 shadow-[0_5px_0_0_rgba(0,0,0,0.4)] hover:bg-[#242d5c] hover:text-white"
+          ? "border-[#e8465f]/60 bg-[#e8465f] text-white"
+          : "border-white/10 bg-[#12172c]/80 text-white/60 hover:bg-[#1b2138] hover:text-white"
       }`}
     >
       {children}
@@ -70,7 +70,7 @@ export function RoundButton({
   );
 }
 
-/** soft panel card */
+/** soft panel card — flat, quiet */
 export function Panel({
   children,
   className = "",
@@ -80,14 +80,14 @@ export function Panel({
 }) {
   return (
     <div
-      className={`rounded-[28px] border border-white/10 bg-gradient-to-b from-[#1a2048]/95 to-[#121634]/95 shadow-[0_28px_70px_-18px_rgba(0,0,0,0.85),inset_0_1px_0_0_rgba(255,255,255,0.12)] backdrop-blur-xl ${className}`}
+      className={`rounded-2xl border border-white/10 bg-[#12172c]/95 shadow-[0_18px_50px_-20px_rgba(0,0,0,0.9)] backdrop-blur-md ${className}`}
     >
       {children}
     </div>
   );
 }
 
-/** rotated sticker badge */
+/** small label chip */
 export function Sticker({
   children,
   tone = "gold",
@@ -98,13 +98,13 @@ export function Sticker({
   className?: string;
 }) {
   const tones = {
-    gold: "bg-[#ffc53d] text-[#4a2e00] shadow-[0_6px_0_0_#b8801a]",
-    cyan: "bg-[#49d8ff] text-[#06293a] shadow-[0_6px_0_0_#1a93bd]",
-    coral: "bg-[#ff5172] text-white shadow-[0_6px_0_0_#b81f42]",
+    gold: "bg-[#e8b64a]/15 text-[#f0c45f] border-[#e8b64a]/30",
+    cyan: "bg-[#5cc8ea]/15 text-[#8fdcff] border-[#5cc8ea]/30",
+    coral: "bg-[#e8465f]/15 text-[#ff8b9d] border-[#e8465f]/30",
   };
   return (
     <span
-      className={`font-display inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.14em] ${tones[tone]} ${className}`}
+      className={`font-display inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] ${tones[tone]} ${className}`}
     >
       {children}
     </span>

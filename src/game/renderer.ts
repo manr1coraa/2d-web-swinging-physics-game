@@ -574,7 +574,7 @@ export class Renderer {
     // street lamps
     for (let x = Math.ceil(x0 / 170) * 170; x < x1; x += 170) {
       const sy = surf(x);
-      ctx.strokeStyle = "#1b1630";
+      ctx.strokeStyle = T.ceiling;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(x, sy);
@@ -588,7 +588,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(x + 16, sy - 50, 54, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = "#ffd79a";
+      ctx.fillStyle = T.groundLine;
       ctx.beginPath();
       ctx.arc(x + 16, sy - 50, 3.4, 0, Math.PI * 2);
       ctx.fill();
@@ -916,7 +916,7 @@ export class Renderer {
         ctx.globalAlpha = 1;
         ctx.restore();
         // warning light at the tip
-        ctx.fillStyle = "#ff5470";
+        ctx.fillStyle = T.spike === "city" ? "#ff5470" : T.trim;
         ctx.beginPath();
         ctx.arc(tipX, tipY - 2, 3.2, 0, Math.PI * 2);
         ctx.fill();
@@ -1004,70 +1004,40 @@ export class Renderer {
         break;
       }
 
-      /* ---- air current (push zone) ---- */
+      /* ---- air current: one calm, readable streak band ---- */
       case "wind": {
         const x0 = o.x - o.w / 2;
         const y0 = o.y - o.h / 2;
-        const ang = Math.atan2(o.vy, o.vx);
+        const spd = Math.hypot(o.vx, o.vy) || 1;
+        const ux = o.vx / spd;
+        const uy = o.vy / spd;
         ctx.save();
-        this.rrect(x0, y0, o.w, o.h, 26);
+        this.rrect(x0, y0, o.w, o.h, 30);
         ctx.clip();
-        const wg = ctx.createLinearGradient(
-          o.x - Math.cos(ang) * o.w * 0.5,
-          o.y - Math.sin(ang) * o.h * 0.5,
-          o.x + Math.cos(ang) * o.w * 0.5,
-          o.y + Math.sin(ang) * o.h * 0.5,
-        );
-        wg.addColorStop(0, "rgba(190,240,255,0.03)");
-        wg.addColorStop(1, `rgba(200,245,255,0.13)`);
-        ctx.fillStyle = wg;
-        ctx.fillRect(x0, y0, o.w, o.h);
-        // streaking flow lines along the direction
-        const spd = Math.hypot(o.vx, o.vy);
-        const ux = o.vx / (spd || 1);
-        const uy = o.vy / (spd || 1);
         ctx.lineCap = "round";
-        const lines = 14;
-        for (let k = 0; k < lines; k++) {
-          const rr = hash(k * 7.3 + Math.floor(o.x));
-          const off = (rr - 0.5) * (Math.abs(o.w * uy) + Math.abs(o.h * ux) + 20);
-          const span = (Math.abs(o.w * ux) + Math.abs(o.h * uy)) * 0.5;
-          const phase = ((t * (0.35 + rr * 0.4) + rr) % 1) - 0.5;
+        for (let k = 0; k < 7; k++) {
+          const rr = hash(k * 5.7 + Math.floor(o.x));
+          const off = (rr - 0.5) * (o.h * 0.7);
+          const span = o.w * 0.5;
+          const phase = ((t * (0.22 + rr * 0.2) + rr) % 1) - 0.5;
           const cx = o.x + ux * phase * span * 2 - uy * off;
           const cy = o.y + uy * phase * span * 2 + ux * off;
-          const alpha = 0.1 + 0.3 * Math.sin(Math.PI * (phase + 0.5));
-          ctx.strokeStyle = `rgba(210,248,255,${alpha.toFixed(3)})`;
-          ctx.lineWidth = 1.4 + rr * 1.6;
+          const alpha = 0.07 + 0.13 * Math.sin(Math.PI * (phase + 0.5));
+          ctx.strokeStyle = `rgba(215,245,255,${alpha.toFixed(3)})`;
+          ctx.lineWidth = 1.6 + rr * 1.4;
           ctx.beginPath();
-          ctx.moveTo(cx - ux * 22, cy - uy * 22);
-          ctx.lineTo(cx + ux * 22, cy + uy * 22);
+          ctx.moveTo(cx - ux * 26, cy - uy * 26);
+          ctx.lineTo(cx + ux * 26, cy + uy * 26);
           ctx.stroke();
         }
         ctx.restore();
-        // soft boundary + arrow heads
-        this.rrect(x0, y0, o.w, o.h, 26);
-        ctx.strokeStyle = `rgba(190,240,255,${(0.2 + 0.14 * Math.sin(t * 2 + o.x)).toFixed(3)})`;
-        ctx.lineWidth = 2;
-        ctx.setLineDash([10, 12]);
-        ctx.lineDashOffset = -t * 40;
+        this.rrect(x0, y0, o.w, o.h, 30);
+        ctx.strokeStyle = `rgba(200,240,255,${(0.13 + 0.07 * Math.sin(t * 1.6 + o.x)).toFixed(3)})`;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([9, 13]);
+        ctx.lineDashOffset = -t * 26;
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.save();
-        ctx.translate(o.x, o.y);
-        ctx.rotate(ang);
-        for (let k = 0; k < 2; k++) {
-          const ax = -14 + k * 26 + Math.sin(t * 4 + k) * 4;
-          ctx.globalAlpha = 0.5 + 0.4 * Math.sin(t * 5 + k * 2);
-          ctx.fillStyle = "#dff6ff";
-          ctx.beginPath();
-          ctx.moveTo(ax - 9, -8);
-          ctx.lineTo(ax + 5, 0);
-          ctx.lineTo(ax - 9, 8);
-          ctx.closePath();
-          ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-        ctx.restore();
         break;
       }
 
@@ -1107,15 +1077,15 @@ export class Renderer {
         ctx.beginPath();
         ctx.arc(o.x, o.y + 14, o.w * 0.85, 0, Math.PI * 2);
         ctx.fill();
-        if (Math.random() < 0.45) {
+        if (Math.random() < 0.2) {
           g.parts.spawn({
             x: o.x + (Math.random() - 0.5) * o.w,
             y: o.y + 8,
-            vx: (Math.random() - 0.5) * 40,
-            vy: 60 + Math.random() * 80,
-            life: 0.6 + Math.random() * 0.5,
-            size: 2 + Math.random() * 3,
-            color: "rgba(255,170,70,0.8)",
+            vx: (Math.random() - 0.5) * 30,
+            vy: 50 + Math.random() * 60,
+            life: 0.5 + Math.random() * 0.4,
+            size: 2 + Math.random() * 2,
+            color: "rgba(255,170,70,0.7)",
             grav: 60,
             drag: 0.5,
           });
@@ -1288,59 +1258,16 @@ export class Renderer {
         ctx.beginPath();
         ctx.ellipse(o.x, yy + 6, o.r * 0.82, o.r * 0.34, 0, 0, Math.PI * 2);
         ctx.stroke();
-        // goal beacon rising from the hole
-        ctx.globalAlpha = 0.12 + 0.08 * Math.sin(t * 3);
+        // a single soft beam marking the way in
+        ctx.globalAlpha = 0.08 + 0.05 * Math.sin(t * 2.2);
         ctx.fillStyle = "#ffe79a";
         ctx.beginPath();
-        ctx.moveTo(o.x - o.r * 0.7, yy);
-        ctx.lineTo(o.x - o.r * 0.28, yy - 420);
-        ctx.lineTo(o.x + o.r * 0.28, yy - 420);
-        ctx.lineTo(o.x + o.r * 0.7, yy);
+        ctx.moveTo(o.x - o.r * 0.62, yy);
+        ctx.lineTo(o.x - o.r * 0.22, yy - 380);
+        ctx.lineTo(o.x + o.r * 0.22, yy - 380);
+        ctx.lineTo(o.x + o.r * 0.62, yy);
         ctx.closePath();
         ctx.fill();
-        ctx.globalAlpha = 1;
-        // bouncing "dive here" chevrons
-        for (let k = 0; k < 3; k++) {
-          const ph = ((t * 0.9 + k / 3) % 1);
-          ctx.globalAlpha = 0.75 * (1 - ph);
-          ctx.strokeStyle = "#ffe79a";
-          ctx.lineWidth = 5;
-          ctx.lineCap = "round";
-          const cyy = yy - 60 - ph * 120;
-          ctx.beginPath();
-          ctx.moveTo(o.x - 20, cyy - 14);
-          ctx.lineTo(o.x, cyy + 6);
-          ctx.lineTo(o.x + 20, cyy - 14);
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-        ctx.font = '800 15px "Baloo 2", sans-serif';
-        ctx.textAlign = "center";
-        ctx.fillStyle = "rgba(255,231,154,0.95)";
-        ctx.fillText("LEVEL GATE", o.x, yy - 210);
-        ctx.textAlign = "start";
-        break;
-      }
-
-      /* ---- street pit marker ---- */
-      case "dip": {
-        ctx.globalAlpha = 0.5;
-        const dg = ctx.createRadialGradient(o.x, o.y, 4, o.x, o.y, o.w);
-        dg.addColorStop(0, "rgba(255,90,60,0.5)");
-        dg.addColorStop(1, "rgba(255,90,60,0)");
-        ctx.fillStyle = dg;
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, o.w, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 0.3 + 0.2 * Math.sin(t * 2 + o.x);
-        ctx.strokeStyle = "#ff7a4d";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([12, 14]);
-        ctx.beginPath();
-        ctx.moveTo(o.x - o.w / 2, o.y - 2);
-        ctx.lineTo(o.x + o.w / 2, o.y - 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
         ctx.globalAlpha = 1;
         break;
       }
@@ -1595,6 +1522,16 @@ export class Renderer {
       ctx.stroke();
     }
 
+    // soft contact shadow — keeps the spider readable over any backdrop
+    const halo = ctx.createRadialGradient(p.x, p.y, 6, p.x, p.y, 30);
+    halo.addColorStop(0, "rgba(5,7,15,0.55)");
+    halo.addColorStop(0.6, "rgba(5,7,15,0.3)");
+    halo.addColorStop(1, "rgba(5,7,15,0)");
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 30, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(ang);
@@ -1843,7 +1780,7 @@ export class Renderer {
     const w = g.vw;
     const h = g.vh;
     const rise = T.ambient === "bubbles" || T.ambient === "embers" || T.ambient === "sparks";
-    const n = T.ambient === "snow" ? 90 : 60;
+    const n = T.ambient === "snow" ? 46 : 32;
     for (let i = 0; i < n; i++) {
       const r1 = hash(i * 4.13);
       const r2 = hash(i * 8.77 + 2.1);
@@ -1853,7 +1790,7 @@ export class Renderer {
       const drift = Math.sin(g.time * (0.4 + r3) + i) * (T.ambient === "leaves" ? 40 : 16);
       const x = wrap(r1 * (w + 80) - g.cam.x * 0.08 + drift, w + 80) - 40;
       const size = 1.4 + r3 * (T.ambient === "bubbles" ? 4 : T.ambient === "snow" ? 3 : 2.4);
-      ctx.globalAlpha = 0.18 + r1 * 0.45;
+      ctx.globalAlpha = 0.12 + r1 * 0.3;
       if (T.ambient === "embers" || T.ambient === "sparks") {
         ctx.fillStyle = i % 3 === 0 ? T.accent : T.ambientColor;
       } else {
