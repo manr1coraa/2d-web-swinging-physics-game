@@ -9,7 +9,7 @@ export const tuning = {
   /** fixed physics step rate. Rendering interpolates between steps. */
   stepHz: 120,
   /** gravity, px/s². Only force that makes you fall. */
-  gravity: 1930,
+  gravity: 1400,
   /** horizontal speed at the very start of a run (a launch, not a push). */
   startVx: 440,
   /**
@@ -40,6 +40,12 @@ export const tuning = {
   swayDamp: 0.25,
   /** largest sideways bow of the web line, px */
   swayMax: 45,
+  /**
+   * Pendulum pumping by reeling. While the press is held, the web shortens
+   * in the lower half of the swing (speeds you up) and lengthens again in
+   * the upper half. px/s. 0 = off.
+   */
+  reelRate: 400,
   /** shortest rope a web may be attached with */
   ropeMin: 56,
   /** longest rope (must exceed the height of the lower corridors) */
@@ -78,7 +84,7 @@ export const tuning = {
    */
   glideLift: 0.6,
   /** fuel: seconds of glide available after a full refill */
-  glideFuel: 1.6,
+  glideFuel: 2.5,
   /** fuel regained per second while swinging or standing on a platform */
   glideRefill: 0.6,
 
@@ -113,6 +119,7 @@ export const tuningRanges: [keyof typeof tuning, number, number, number, string]
   ["ropeMaxStretch", 0, 0.4, 0.01, "web max stretch"],
   ["swayStiff", 2, 30, 0.5, "web sway stiffness"],
   ["swayDamp", 0, 1, 0.01, "web sway damping"],
+  ["reelRate", 0, 400, 5, "reel pump px/s"],
   ["ropeMin", 30, 200, 2, "rope min"],
   ["ropeMax", 200, 600, 5, "rope max"],
   ["perfectAngleDeg", 5, 45, 1, "perfect angle°"],

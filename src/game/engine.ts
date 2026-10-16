@@ -820,6 +820,11 @@ export class Game {
         p.vx += nx * a * h;
         p.vy += ny * a * h;
       }
+      // reeling: shorten below the anchor, pay out above it (pumps energy)
+      if (this.holdWeb && T.reelRate > 0) {
+        if (p.y > p.ay) p.rope = Math.max(T.ropeMin, p.rope - T.reelRate * h);
+        else p.rope = Math.min(p.rope0, p.rope + T.reelRate * h);
+      }
       // hard safety limit, so the web never stretches without bound
       const lim = p.rope * (1 + T.ropeMaxStretch);
       if (d > lim) {
@@ -836,7 +841,8 @@ export class Game {
       const tx = -ny;
       const ty = nx;
       const vt = p.vx * tx + p.vy * ty;
-      const target = clamp(-vt * 0.05, -T.swayMax, T.swayMax);
+      // the line bows forward, in the direction the spider is being pulled
+      const target = clamp(vt * 0.05, -T.swayMax, T.swayMax);
       const SW = T.swayStiff;
       const sa = SW * SW * (target - p.sway) - 2 * T.swayDamp * SW * p.swayV;
       p.swayV += sa * h;
