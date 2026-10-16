@@ -9,7 +9,6 @@ import {
   Gauge,
   Pause,
   ShieldCheck,
-  Magnet,
   Home,
   HelpCircle,
   AlertTriangle,
@@ -41,7 +40,6 @@ const initialSnap: Snap = {
   cause: "",
   showHint: false,
   shield: false,
-  magnetT: 0,
   tip: null,
   glideFuel: 0,
   gliding: false,
@@ -158,11 +156,6 @@ export default function GameScreen() {
             {snap.shield && (
               <div className="font-display anim-pop-in flex items-center gap-1.5 rounded-2xl border-b-2 border-[#19876a] bg-[#2fe0b0]/90 px-3 py-1.5 text-xs font-extrabold uppercase tracking-wider text-[#05312a]">
                 <ShieldCheck size={13} /> shield
-              </div>
-            )}
-            {snap.magnetT > 0 && (
-              <div className="font-display anim-pop-in flex items-center gap-1.5 rounded-2xl border-b-2 border-[#b83a54] bg-[#ff6b81]/90 px-3 py-1.5 text-xs font-extrabold uppercase tracking-wider text-[#3d0813]">
-                <Magnet size={13} /> {Math.ceil(snap.magnetT)}s
               </div>
             )}
           </div>

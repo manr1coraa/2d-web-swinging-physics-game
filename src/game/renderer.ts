@@ -733,46 +733,10 @@ export class Renderer {
         break;
       }
 
-      case "boost": {
-        if (o.used) break;
-        const pulse = 1 + Math.sin(t * 4.2 + o.x * 0.05) * 0.07;
-        const r0 = o.r * pulse;
-        ctx.globalAlpha = 0.14;
-        ctx.fillStyle = "#ff5e7a";
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, r0 + 12, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = "rgba(255,94,122,0.45)";
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, r0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.strokeStyle = "#ffd7de";
-        ctx.lineWidth = 2.4;
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, r0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.strokeStyle = "#ff5e7a";
-        ctx.lineWidth = 3.2;
-        ctx.lineCap = "round";
-        const wob2 = Math.sin(t * 6) * 1.6;
-        for (let k = 0; k < 3; k++) {
-          const cx = o.x - 9 + k * 9 + wob2;
-          ctx.beginPath();
-          ctx.moveTo(cx - 2.5, o.y - 5.5);
-          ctx.lineTo(cx + 3, o.y);
-          ctx.lineTo(cx - 2.5, o.y + 5.5);
-          ctx.stroke();
-        }
-        break;
-      }
-
-      case "shield":
-      case "magnet": {
+      case "shield": {
         if (o.got) break;
-        const isShield = o.kind === "shield";
-        const col = isShield ? "#2fe0b0" : "#ff6b81";
+        const isShield = true;
+        const col = "#2fe0b0";
         const oy = o.y + Math.sin(t * 2.2 + o.x * 0.04) * 5;
         const orad = o.r * (1 + Math.sin(t * 3.6 + o.x) * 0.07);
         ctx.globalAlpha = 0.16;
@@ -899,14 +863,6 @@ export class Renderer {
     const ang = Math.atan2(p.vy, p.vx || 0.0001);
     const wob = Math.sin(g.time * 11 + sp * 0.01);
 
-    if (g.magnetT > 0) {
-      const mp = 30 + Math.sin(g.time * 6) * 4;
-      ctx.strokeStyle = `rgba(255,107,129,${(0.28 + 0.12 * Math.sin(g.time * 6)).toFixed(3)})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(p.rx, p.ry, mp, 0, Math.PI * 2);
-      ctx.stroke();
-    }
     if (g.shieldActive) {
       ctx.fillStyle = "rgba(47,224,176,0.10)";
       ctx.beginPath();

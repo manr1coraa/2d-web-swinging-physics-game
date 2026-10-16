@@ -1,4 +1,4 @@
-import { ShieldCheck, Magnet, Zap, Wind, Sparkles } from "lucide-react";
+import { ShieldCheck, Zap, Wind, Sparkles } from "lucide-react";
 import type { Announce } from "../game/engine";
 
 const THEME: Record<
@@ -11,20 +11,6 @@ const THEME: Record<
     ring: "rgba(47,224,176,0.55)",
     icon: ShieldCheck,
     text: "#042c24",
-  },
-  magnet: {
-    from: "#ff8ea1",
-    to: "#e8445f",
-    ring: "rgba(255,142,161,0.55)",
-    icon: Magnet,
-    text: "#3d0813",
-  },
-  boost: {
-    from: "#ffd36b",
-    to: "#ff7a2f",
-    ring: "rgba(255,180,90,0.55)",
-    icon: Zap,
-    text: "#432200",
   },
   glide: {
     from: "#7fe6ff",

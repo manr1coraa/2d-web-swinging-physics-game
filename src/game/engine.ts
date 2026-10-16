@@ -19,7 +19,6 @@ export interface Snap {
   cause: string;
   showHint: boolean;
   shield: boolean;
-  magnetT: number;
   tip: Tip | null;
   glideFuel: number;
   gliding: boolean;
@@ -84,22 +83,10 @@ export const TIPS: Record<string, Tip> = {
     text: "Strung along the ideal arc. Chain them for a rising combo jingle.",
     tone: "good",
   },
-  boost: {
-    id: "boost",
-    title: "Boost ring",
-    text: "Fly through for a burst of speed. Great right before a long gap.",
-    tone: "good",
-  },
   shield: {
     id: "shield",
     title: "Shield bubble",
     text: "Absorbs one fatal hit and throws you back into the air. One save per pickup.",
-    tone: "good",
-  },
-  magnet: {
-    id: "magnet",
-    title: "Magnet",
-    text: "Pulls every nearby coin to you for nine seconds.",
     tone: "good",
   },
 };
@@ -107,7 +94,7 @@ export const TIPS: Record<string, Tip> = {
 /** full-screen transformation callout */
 export interface Announce {
   id: string;
-  kind: "shield" | "magnet" | "boost" | "glide" | "perfect" | "save";
+  kind: "shield" | "glide" | "perfect" | "save";
   title: string;
   sub: string;
 }
@@ -122,7 +109,6 @@ export interface Popup {
   max: number;
 }
 
-const MAGNET_TIME = 9;
 const MAX_SLICE = 0.25; // never simulate more than this much real time at once
 
 const BEST_KEY = "pauchok_best";
@@ -189,7 +175,6 @@ export class Game {
 
   // power-ups
   shieldActive = false;
-  magnetT = 0;
   private invulnT = 0;
   private perfectCombo = 0;
   private lastMilestone = 0;
@@ -243,7 +228,6 @@ export class Game {
     this.firstClick = false;
     this.trauma = 0;
     this.shieldActive = false;
-    this.magnetT = 0;
     this.invulnT = 0;
     this.perfectCombo = 0;
     this.lastMilestone = 0;
@@ -650,7 +634,6 @@ export class Game {
     if (p.trail.length > 22) p.trail.shift();
 
     // power-up timers
-    if (this.magnetT > 0) this.magnetT = Math.max(0, this.magnetT - dt);
     if (this.invulnT > 0) this.invulnT -= dt;
     if (!p.attached && !p.grounded && this.gliding) {
       this.glideFuel = Math.max(0, this.glideFuel - dt);
@@ -855,13 +838,10 @@ export class Game {
         case "coin": {
           if (!o.got) {
             const d = dist(p.x, p.y, o.x, o.y);
-            const pullR = this.magnetT > 0 ? 215 : 70;
+            const pullR = 70;
             if (d < pullR) {
               // magnet power-up sucks coins hard, base is a gentle pull
-              const f =
-                this.magnetT > 0
-                  ? 0.05
-                  : (1 - Math.exp(-0.45 * (70 - d) * 0.016)) * 0.12;
+              const f = (1 - Math.exp(-0.45 * (70 - d) * 0.016)) * 0.12;
               o.x = lerp(o.x, p.x, f);
               o.y = lerp(o.y, p.y, f);
             }
@@ -869,13 +849,6 @@ export class Game {
               o.got = true;
               this.onCoin(o.x, o.y);
             }
-          }
-          break;
-        }
-        case "boost": {
-          if (!o.used && dist(p.x, p.y, o.x, o.y) < o.r + p.r * 0.75) {
-            o.used = true;
-            this.boostNow(o.x, o.y);
           }
           break;
         }
@@ -897,24 +870,6 @@ export class Game {
           }
           break;
         }
-        case "magnet": {
-          if (!o.got && dist(p.x, p.y, o.x, o.y) < 34 + p.r) {
-            o.got = true;
-            this.magnetT = MAGNET_TIME;
-            this.showAnnounce({
-              id: "magnet" + Math.floor(this.time * 10),
-              kind: "magnet",
-              title: "MAGNET",
-              sub: `${MAGNET_TIME}s of coin vacuum`,
-            });
-            this.popup(p.x, p.y - 56, "MAGNET!", "#ff8ea1", 22);
-            this.parts.burst(o.x, o.y, "#ff6b81", 12, 190, 2.6, 0.5, 240);
-            this.parts.ring(o.x, o.y, "rgba(255,107,129,0.9)", 5, 0.4);
-            this.sfx.magnetUp();
-            this.emit();
-          }
-          break;
-        }
       }
     });
     if (death) this.die(death);
@@ -928,32 +883,6 @@ export class Game {
     this.parts.burst(x, y, "#ffd23f", 10, 170, 2.6, 0.45, 320);
     this.parts.ring(x, y, "rgba(255,210,63,0.9)", 4, 0.35);
     this.emit();
-  }
-
-  private boostNow(x: number, y: number) {
-    const p = this.player;
-    const sp = Math.max(p.speed(), 360);
-    const k = Math.min((sp + 320) / sp, 1.4);
-    p.vx = p.vx * k + 80;
-    p.vy = p.vy * k;
-    const s2 = p.speed();
-    const cap = this.softMax() * 1.12;
-    if (s2 > cap) {
-      const c = cap / s2;
-      p.vx *= c;
-      p.vy *= c;
-    }
-    this.trauma = Math.min(0.55, this.trauma + 0.22);
-    this.showAnnounce({
-      id: "boost" + Math.floor(this.time * 10),
-      kind: "boost",
-      title: "BOOST!",
-      sub: "speed burst",
-    });
-    this.popup(p.x, p.y - 50, "BOOST!", "#ff8ea1", 20);
-    this.parts.burst(x, y, "#ff7d9c", 16, 320, 3, 0.5, 200);
-    this.parts.ring(x, y, "rgba(255,125,156,0.95)", 10, 0.5);
-    this.sfx.boost();
   }
 
   /** shield absorbs one lethal hit and bails you out */
@@ -995,7 +924,6 @@ export class Game {
     this.cause = cause;
     this.trauma = 1;
     this.shieldActive = false;
-    this.magnetT = 0;
     this.perfectCombo = 0;
     const p = this.player;
     p.attached = false;
@@ -1041,8 +969,7 @@ export class Game {
       const ox = o.x;
       if (ox < p.x + 120 || ox > p.x + lookahead) return;
       if (o.kind === "coin" && o.got) return;
-      if (o.kind === "boost" && o.used) return;
-      if ((o.kind === "shield" || o.kind === "magnet") && o.got) return;
+      if (o.kind === "shield" && o.got) return;
       if (!this.taught.has(o.kind) && TIPS[o.kind]) found = o.kind;
     });
     if (found) this.show(found);
@@ -1100,7 +1027,6 @@ export class Game {
       this.cause,
       this.state === "playing" && !this.firstClick,
       this.shieldActive,
-      Math.ceil(this.magnetT),
       this.tip?.id ?? "",
       Math.ceil(this.glideFuel * 5),
       this.gliding,
@@ -1120,7 +1046,6 @@ export class Game {
       cause: this.cause,
       showHint: this.state === "playing" && !this.firstClick,
       shield: this.shieldActive,
-      magnetT: this.magnetT,
       tip: this.tip,
       glideFuel: this.glideFuel,
       gliding: this.gliding,
