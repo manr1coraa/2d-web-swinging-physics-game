@@ -33,7 +33,7 @@ export interface Tip {
 
 /** the only three lessons in the whole game — each is shown once, in the scene */
 export const TIPS: Record<string, Tip> = {
-  hold: { id: "hold", text: "Держи, чтобы выстрелить паутиной" },
+  hold: { id: "hold", text: "Держи — паутина. Двойной тап — полёт" },
   release: { id: "release", text: "Отпусти внизу дуги — там самая скорость" },
   street: { id: "street", text: "Не касайся улицы" },
 };
@@ -75,6 +75,7 @@ const GLIDE_CLIMB = -110; // fast glides actually gain altitude
 const GLIDE_FWD = 190; // forward drift from the web-wings
 const UPDRAFT_H = 330; // height above the street where thermals kick in
 const UPDRAFT_VY = -330; // how hard the updraft lifts you clear
+const DOUBLE_TAP = 0.3; // seconds between two taps that count as a double tap
 const GRACE = 3.2; // seconds of invulnerability at the start of a run
 const METER = 50; // px per meter
 
@@ -111,7 +112,12 @@ export class Game {
   attachTime = -10;
   pumpFx = 0;
   gliding = false;
-  glideHold = false; // explicit glide input (button / key)
+  glideHold = false; // flight is on (double tap held / double Space held)
+  private glideTap = false; // this flight was started by a double tap
+  private lastTapT = -10;
+  private lastTapX = 0;
+  private lastTapY = 0;
+  private lastSpaceT = -10;
   graceT = 0;
   lowAlt = 0;
   private autoRetryT = 0;
@@ -269,7 +275,7 @@ export class Game {
     }
   }
 
-  /** explicit glide input — held from a button or a key */
+  /** flight on/off — driven by a double tap, see onPointerDown */
   setGlide(on: boolean) {
     if (this.glideHold === on) return;
     this.glideHold = on;
@@ -320,6 +326,19 @@ export class Game {
     }
     if (this.state !== "playing") return;
     this.pointer.id = e.pointerId;
+    // double tap: the second touch is held to fly instead of shooting a web
+    const dbl =
+      this.time - this.lastTapT < DOUBLE_TAP &&
+      Math.hypot(e.clientX - this.lastTapX, e.clientY - this.lastTapY) < 80;
+    this.lastTapT = this.time;
+    this.lastTapX = e.clientX;
+    this.lastTapY = e.clientY;
+    if (dbl) {
+      this.lastTapT = -10;
+      this.glideTap = true;
+      this.setGlide(true);
+      return;
+    }
     this.holdWeb = true;
     this.autoRetryT = 0;
     this.tryAutoAttach();
@@ -330,7 +349,14 @@ export class Game {
     this.pointer.id = -1;
     this.holdWeb = false;
     this.release(false);
+    this.endTapGlide();
   };
+
+  private endTapGlide() {
+    if (!this.glideTap) return;
+    this.glideTap = false;
+    this.setGlide(false);
+  }
 
   private onKey = (e: KeyboardEvent) => {
     if (e.code === "KeyR") {
@@ -349,19 +375,19 @@ export class Game {
         this.start();
       else if (this.state === "paused") this.resume();
       else if (this.state === "playing" && !e.repeat) {
-        // one-button web: hold to auto-swing
-        this.holdWeb = true;
-        this.autoRetryT = 0;
-        this.tryAutoAttach();
+        // same rule as touch: hold to web, double-press and hold to fly
+        const dbl = this.time - this.lastSpaceT < DOUBLE_TAP;
+        this.lastSpaceT = this.time;
+        if (dbl) {
+          this.lastSpaceT = -10;
+          this.glideTap = true;
+          this.setGlide(true);
+        } else {
+          this.holdWeb = true;
+          this.autoRetryT = 0;
+          this.tryAutoAttach();
+        }
       }
-    } else if (
-      e.code === "ShiftLeft" ||
-      e.code === "ShiftRight" ||
-      e.code === "KeyG" ||
-      e.code === "ArrowDown"
-    ) {
-      e.preventDefault();
-      if (this.state === "playing" && !e.repeat) this.setGlide(true);
     } else if (e.code === "Escape") {
       if (this.state === "playing") this.pause();
       else if (this.state === "paused") this.resume();
@@ -372,13 +398,7 @@ export class Game {
     if (e.code === "Space" || e.code === "Enter") {
       this.holdWeb = false;
       this.release(false);
-    } else if (
-      e.code === "ShiftLeft" ||
-      e.code === "ShiftRight" ||
-      e.code === "KeyG" ||
-      e.code === "ArrowDown"
-    ) {
-      this.setGlide(false);
+      this.endTapGlide();
     }
   };
 
@@ -677,12 +697,9 @@ export class Game {
     // ---- glide: holding with no web out spreads the web-wings ----
     // The spider catches air instead of dropping like a stone, which gives
     // you time to find the next ledge (and makes the early game forgiving).
+    // flight is only ever entered by a double tap; holding alone never flies
     const glide =
-      !p.attached &&
-      !p.grounded &&
-      (this.glideHold || this.holdWeb) &&
-      p.vy > -80 &&
-      this.state === "playing";
+      !p.attached && !p.grounded && this.glideHold && p.vy > -80 && this.state === "playing";
     this.gliding = glide;
     p.vy += (glide ? G * GLIDE_G : G) * h;
     if (glide) {
