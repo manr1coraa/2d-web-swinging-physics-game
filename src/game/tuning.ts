@@ -25,6 +25,21 @@ export const tuning = {
    * swing keeps going. 0 turns it off. (Previously 700; now a softer 260.)
    */
   pump: 260,
+  /**
+   * Elastic web. Beyond its rest length the web pulls back like a spring.
+   * ropeSpring = natural frequency, rad/s (higher = stiffer).
+   */
+  ropeSpring: 16,
+  /** web damping ratio: 0 = bouncy forever, 1 = no bounce */
+  ropeDamp: 0.25,
+  /** how far the web may stretch past its rest length, fraction (0.12 = 12%) */
+  ropeMaxStretch: 0.12,
+  /** the web line bows and swings with the spider's sideways motion: spring rad/s */
+  swayStiff: 12,
+  /** damping ratio of that bowing (0 = keeps swinging, 1 = no swing) */
+  swayDamp: 0.25,
+  /** largest sideways bow of the web line, px */
+  swayMax: 45,
   /** shortest rope a web may be attached with */
   ropeMin: 56,
   /** longest rope (must exceed the height of the lower corridors) */
@@ -93,6 +108,11 @@ export const tuningRanges: [keyof typeof tuning, number, number, number, string]
   ["startVx", 0, 800, 10, "start vx"],
   ["softMaxScreens", 0.8, 3, 0.05, "soft max (screens/s)"],
   ["pump", 0, 600, 5, "swing pump"],
+  ["ropeSpring", 4, 40, 0.5, "web stiffness"],
+  ["ropeDamp", 0, 1, 0.01, "web damping"],
+  ["ropeMaxStretch", 0, 0.4, 0.01, "web max stretch"],
+  ["swayStiff", 2, 30, 0.5, "web sway stiffness"],
+  ["swayDamp", 0, 1, 0.01, "web sway damping"],
   ["ropeMin", 30, 200, 2, "rope min"],
   ["ropeMax", 200, 600, 5, "rope max"],
   ["perfectAngleDeg", 5, 45, 1, "perfect angle°"],

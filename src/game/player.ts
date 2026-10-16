@@ -21,6 +21,8 @@ export class Player {
   ay = 0;
   rope = 0; // rope length, fixed while attached
   rope0 = 0; // length at the moment of attach
+  sway = 0; // sideways bow of the web line, px (spring-driven)
+  swayV = 0; // its speed, px/s
 
   grounded = false;
   trail: { x: number; y: number }[] = [];
@@ -38,6 +40,8 @@ export class Player {
     this.vy = 0;
     this.attached = false;
     this.grounded = false;
+    this.sway = 0;
+    this.swayV = 0;
     this.trail = [];
     this.syncPrev();
     this.syncRender();

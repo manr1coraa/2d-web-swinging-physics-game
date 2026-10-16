@@ -858,8 +858,13 @@ export class Renderer {
     const ey = p.ry + (p.ay - p.ry) * ease;
     const curLen = Math.hypot(p.ax - p.rx, p.ay - p.ry);
     const sag = Math.max(0, p.rope - curLen) * 0.55 * ease + (1 - ease) * 3;
-    const mx = (p.rx + ex) / 2;
-    const my = (p.ry + ey) / 2 + sag;
+    // the bow of the web line: perpendicular to the chord
+    const cdx = ex - p.rx;
+    const cdy = ey - p.ry;
+    const cl = Math.hypot(cdx, cdy) || 1;
+    const bow = p.sway * ease;
+    const mx = (p.rx + ex) / 2 - (cdy / cl) * bow;
+    const my = (p.ry + ey) / 2 + sag + (cdx / cl) * bow;
     // taut rope glows brighter, slack rope is dimmer: tension you can read
     const taut = clamp(curLen / Math.max(1, p.rope), 0, 1) * ease;
     const path = () => {

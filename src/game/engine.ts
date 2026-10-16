@@ -802,23 +802,51 @@ export class Game {
     p.x += p.vx * h;
     p.y += p.vy * h;
 
-    // rope: rigid pendulum with honest momentum. Radial speed is removed;
-    // tangential speed is kept.
+    // rope: an elastic spring with damping. Beyond its rest length it pulls
+    // back; the stretch is small and limited by ropeMaxStretch. Tangential
+    // speed is never touched, so the swing keeps its momentum.
     if (p.attached) {
       const rx = p.x - p.ax;
       const ry = p.y - p.ay;
       const d = Math.hypot(rx, ry) || 0.0001;
-      if (d > p.rope) {
-        const nx = rx / d;
-        const ny = ry / d;
-        p.x = p.ax + nx * p.rope;
-        p.y = p.ay + ny * p.rope;
-        const vr = p.vx * nx + p.vy * ny;
-        if (vr > 0) {
-          p.vx -= vr * nx;
-          p.vy -= vr * ny;
+      const nx = rx / d;
+      const ny = ry / d;
+      const stretch = d - p.rope;
+      if (stretch > 0) {
+        const W = T.ropeSpring;
+        const vr = p.vx * nx + p.vy * ny; // outward radial speed
+        // a = -(ω²·s + 2ζω·v_r), applied along the web
+        const a = -(W * W * stretch + 2 * T.ropeDamp * W * vr);
+        p.vx += nx * a * h;
+        p.vy += ny * a * h;
+      }
+      // hard safety limit, so the web never stretches without bound
+      const lim = p.rope * (1 + T.ropeMaxStretch);
+      if (d > lim) {
+        p.x = p.ax + nx * lim;
+        p.y = p.ay + ny * lim;
+        const vr2 = p.vx * nx + p.vy * ny;
+        if (vr2 > 0) {
+          p.vx -= vr2 * nx;
+          p.vy -= vr2 * ny;
         }
       }
+
+      // web line bows opposite to the swing, like it lags behind the spider
+      const tx = -ny;
+      const ty = nx;
+      const vt = p.vx * tx + p.vy * ty;
+      const target = clamp(-vt * 0.05, -T.swayMax, T.swayMax);
+      const SW = T.swayStiff;
+      const sa = SW * SW * (target - p.sway) - 2 * T.swayDamp * SW * p.swayV;
+      p.swayV += sa * h;
+      p.sway += p.swayV * h;
+    } else {
+      // relax back to straight
+      const SW = T.swayStiff;
+      const sa = SW * SW * (0 - p.sway) - 2 * T.swayDamp * SW * p.swayV;
+      p.swayV += sa * h;
+      p.sway += p.swayV * h;
     }
     this.collide();
   }
