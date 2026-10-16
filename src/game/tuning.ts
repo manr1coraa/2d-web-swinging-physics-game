@@ -91,12 +91,12 @@ export const tuning = {
   // ---- tricks ------------------------------------------------------------
   /**
    * Spin rate of an automatic flip after a release, rad/s, at 700 px/s.
+   * 13 gives about one flip per typical flight (~0.9 s); faster releases
+   * can give a double flip.
    * It scales with speed, so a fast release spins faster. One full turn
    * (2π) is a flip, two in one air time is a double flip.
    */
-  flipSpin: 6,
-  /** points of the flip bonus shown when a flip completes (popup only) */
-  flipBonus: 100,
+  flipSpin: 13,
 
   // ---- updrafts ----------------------------------------------------------
   /** gentle lift inside an updraft, px/s² (about half of gravity) */
@@ -140,7 +140,7 @@ export const tuningRanges: [keyof typeof tuning, number, number, number, string]
   ["swayStiff", 2, 30, 0.5, "web sway stiffness"],
   ["swayDamp", 0, 1, 0.01, "web sway damping"],
   ["reelRate", 0, 400, 5, "reel pump px/s"],
-  ["flipSpin", 0, 14, 0.5, "flip spin rad/s"],
+  ["flipSpin", 0, 20, 0.5, "flip spin rad/s"],
   ["windPush", 0, 1400, 10, "updraft lift"],
   ["windHold", 0, 2600, 10, "updraft hold lift"],
   ["burnTime", 0.5, 6, 0.1, "burn time s"],
