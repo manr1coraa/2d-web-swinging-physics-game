@@ -785,6 +785,20 @@ export class Game {
     p.vx *= f;
     p.vy *= f;
 
+    // gentle self-pump: tangential push along the swing, strongest when slow
+    if (p.attached && T.pump > 0) {
+      const rx2 = p.x - p.ax;
+      const ry2 = p.y - p.ay;
+      const d2 = Math.hypot(rx2, ry2) || 0.0001;
+      const tx = -ry2 / d2;
+      const ty = rx2 / d2;
+      const vt = p.vx * tx + p.vy * ty;
+      const dir = vt >= 0 ? 1 : -1;
+      const k = clamp(1 - p.speed() / (0.6 * vmax), 0.1, 1);
+      p.vx += tx * dir * T.pump * k * h;
+      p.vy += ty * dir * T.pump * k * h;
+    }
+
     p.x += p.vx * h;
     p.y += p.vy * h;
 

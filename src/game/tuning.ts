@@ -19,6 +19,12 @@ export const tuning = {
   softMaxScreens: 1.8,
 
   // ---- web / pendulum ---------------------------------------------------
+  /**
+   * Gentle self-pump while hooked: a tangential push along the swing, px/s².
+   * It is strongest when slow and fades out as speed rises, so a stalled
+   * swing keeps going. 0 turns it off. (Previously 700; now a softer 260.)
+   */
+  pump: 260,
   /** shortest rope a web may be attached with */
   ropeMin: 56,
   /** longest rope (must exceed the height of the lower corridors) */
@@ -86,6 +92,7 @@ export const tuningRanges: [keyof typeof tuning, number, number, number, string]
   ["gravity", 600, 3000, 10, "gravity"],
   ["startVx", 0, 800, 10, "start vx"],
   ["softMaxScreens", 0.8, 3, 0.05, "soft max (screens/s)"],
+  ["pump", 0, 600, 5, "swing pump"],
   ["ropeMin", 30, 200, 2, "rope min"],
   ["ropeMax", 200, 600, 5, "rope max"],
   ["perfectAngleDeg", 5, 45, 1, "perfect angle°"],
