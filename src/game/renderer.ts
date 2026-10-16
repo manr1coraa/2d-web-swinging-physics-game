@@ -472,6 +472,31 @@ export class Renderer {
     ctx.closePath();
     ctx.fillStyle = T.ceiling;
     ctx.fill();
+    // pixel brick texture for a coherent indie look
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(xa, top);
+    ctx.lineTo(xa, edge(xa));
+    for (let x = xa + 14; x < xb; x += 14) ctx.lineTo(x, edge(x));
+    ctx.lineTo(xb, edge(xb));
+    ctx.lineTo(xb, top);
+    ctx.closePath();
+    ctx.clip();
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.lineWidth = 1;
+    for (let y = top; y < edge(xa); y += 12) {
+      ctx.beginPath();
+      ctx.moveTo(xa, y);
+      ctx.lineTo(xb, y);
+      ctx.stroke();
+    }
+    for (let x = xa; x < xb; x += 24) {
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, edge(x));
+      ctx.stroke();
+    }
+    ctx.restore();
 
     // canopy foliage / ice crystals / coral on the underside for organic themes
     if (T.deco === "kelp" || T.spike === "vine" || T.spike === "coral") {
