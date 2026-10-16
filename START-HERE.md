@@ -1,0 +1,59 @@
+# START-HERE — состояние проекта WEBBY!
+
+Этот файл — точка входа для следующих AI-агентов и разработчиков.
+Репозиторий: `manr1coraa/2d-web-swinging-physics-game`, ветка `arena/8e31ff8f-2d-web-swinging-physics-game`.
+
+## Что это
+2D-игра на физике раскачивания на паутине (React + TypeScript + Vite + Canvas 2D).
+Управление: держать SPACE/клик — паук цепляется за выступ; отпустить — полёт.
+Уровень = 250 м, в конце люк-портал в следующий уровень. 40 уровней = 8 миров × 5 кругов.
+
+## Запуск
+```bash
+npm install
+npm run dev      # http://localhost:5173  (host:true, allowedHosts:true)
+npm run build    # single-file сборка в dist/index.html
+```
+
+## Тесты
+```bash
+# cjs-бандлы (esbuild)
+for t in sim gaps mechanics ab lazy; do npx esbuild tools/$t.ts --bundle --format=cjs --platform=node --outfile=tools/$t.cjs; done
+node tools/gaps.cjs
+node tools/mechanics.cjs
+node tools/ab.cjs
+
+# esm-бандлы
+for t in e2e perf spike; do npx esbuild tools/$t.ts --bundle --format=esm --platform=node --outfile=tools/$t.mjs --external:jsdom --external:@napi-rs/canvas; done
+node tools/e2e.mjs
+```
+Ожидаемо: gaps 0 >300px, mechanics 18/18, ab нулевой дрейф, e2e 23/23.
+
+## Структура
+- `src/game/engine.ts` — ядро: физика маятника, шаг, коллизии, состояния.
+- `src/game/player.ts` — состояние игрока (позиция, скорость, верёвка).
+- `src/game/world.ts` — генерация мира (крыши, выступы, опасности, ветер, монеты, порталы).
+- `src/game/renderer.ts` — отрисовка (фон, объекты, паук, верёвка, эффекты).
+- `src/game/themes.ts` — палитры миров.
+- `src/components/Game.tsx` — React-HUD/меню/пауза/экраны.
+- `tools/orig/*` — копия исходного движка для A/B-теста `tools/ab.cjs`.
+- `tools/*` — headless-заглушки и скриптовый игрок (не входят в продакшн-сборку).
+
+## Последние изменения (ветка arena/8e31ff8f-...)
+- Замедлен темп: меньше гравитация/ускорение/макс. скорость/пампинг/восходящие потоки, больше стартовая неуязвимость (на ловкость/реакцию, а не скорость).
+- Уменьшен визуальный шум: меньше частиц пара/огня, реже speed-lines, меньше амбиент-частиц, спокойнее danger-стрелки.
+- Ветряные потоки стали реже и слабее.
+- Верёвка визуально растягивается/провисает сильнее на высокой скорости (сгиб), физика ядра не менялась (ab остаётся зелёным).
+- Добавлено сальто паука при отпускании паутины.
+- Убран лишний HUD-чип «safe …s».
+- Тестовые зависимости `jsdom` и `@napi-rs/canvas` перенесены в devDependencies.
+
+## Важные ограничения
+- Репозиторий сейчас **приватный**. Сделать публичным через API не удалось (токен без admin-scope). Смените видимость вручную: Settings → Danger Zone → Change visibility → Public.
+- `tools/*.cjs` и `tools/*.mjs` в `.gitignore` — пересобирайте локально.
+- Ядро физики (констрейнт маятника, PUMP, REEL, спул верёвки) не менялось — это проверяет `tools/ab.cjs`. При правках физики обновляйте и `tools/orig/engine.ts`, иначе ab упадёт.
+
+## Следующие шаги (по запросу пользователя)
+- Упростить интерфейс меню/игры дальше, добавить трюки, настроить сложность.
+- При необходимости — глубже переработать физику паутины (эластичность/притяжение к поверхностям) с обновлением тестов.
+- После смены видимости — дать доступ следующим AI-агентам к GitHub-репозиторию.
