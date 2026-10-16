@@ -1026,7 +1026,7 @@ export class Renderer {
       const pop = 1 + Math.max(0, tp.life / tp.max - 0.82) * 1.2;
       const size = tp.size * pop;
       ctx.globalAlpha = f;
-      ctx.font = `800 ${size}px "Baloo 2", sans-serif`;
+      ctx.font = `600 ${size}px ui-rounded, "SF Pro Rounded", system-ui, sans-serif`;
       ctx.lineWidth = Math.max(3, size / 6);
       ctx.strokeStyle = "rgba(5,8,24,0.85)";
       ctx.strokeText(tp.str, tp.x, tp.y);
