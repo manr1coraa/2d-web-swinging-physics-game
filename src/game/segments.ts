@@ -56,6 +56,19 @@ export class Piece {
     this.items.push({ kind: "plat", x: this.wx(x), y, w, h: 24 });
   }
 
+  /**
+   * a burning ledge: a web hooked here tears after tuning.burnTime seconds.
+   * Same shape as plat(), so the player reads it as a normal ledge.
+   */
+  burnPlat(x: number, y: number, w: number) {
+    this.items.push({ kind: "plat", x: this.wx(x), y, w, h: 24, burn: true });
+  }
+
+  /** an updraft column: hold Space inside it to climb */
+  wind(x: number, w: number, yTop: number, yBot: number) {
+    this.items.push({ kind: "wind", x: this.wx(x), w, yTop, yBot });
+  }
+
   /** stalactite hanging from the ceiling */
   stal(x: number, len: number, w = 14 + len * 0.16) {
     const X = this.wx(x);
@@ -328,6 +341,38 @@ export const SEGMENTS: Segment[] = [
       p.spire(200, 240);
       p.stal(470, 140);
       p.saw(700, 0.5, 26);
+    },
+  },
+  // ---------- updrafts and burning buildings ----------
+  {
+    id: "updraft-shaft",
+    tier: 1,
+    role: "build",
+    gap: [150, 800],
+    build(p) {
+      p.wind(300, 170, 130, 560);
+      p.plat(560, 400, 150);
+      p.coinArc(560, 400 - 26, 150);
+    },
+  },
+  {
+    id: "burning-ledges",
+    tier: 2,
+    role: "build",
+    build(p) {
+      p.burnPlat(250, 400, 120);
+      p.burnPlat(500, 330, 120);
+      p.plat(760, 390, 140);
+    },
+  },
+  {
+    id: "thermal-hop",
+    tier: 3,
+    role: "peak",
+    build(p) {
+      p.burnPlat(260, 380, 110);
+      p.wind(520, 150, 120, 560);
+      p.burnPlat(760, 330, 110);
     },
   },
 ];

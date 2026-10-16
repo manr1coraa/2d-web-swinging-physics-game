@@ -23,6 +23,11 @@ export class Player {
   rope0 = 0; // length at the moment of attach
   sway = 0; // sideways bow of the web line, px (spring-driven)
   swayV = 0; // its speed, px/s
+  spin = 0; // flip speed in the air, rad/s (0 when hooked or on the ground)
+  spinOff = 0; // body rotation added on top of the flight direction, rad
+  spinSum = 0; // rotation done in the current air time, rad
+  burnLeft = 0; // seconds before a web on a burning ledge tears (0 = not burning)
+  burnMax = 0; // the full burn time of the current web, for the heat colour
 
   grounded = false;
   trail: { x: number; y: number }[] = [];
@@ -42,6 +47,11 @@ export class Player {
     this.grounded = false;
     this.sway = 0;
     this.swayV = 0;
+    this.spin = 0;
+    this.spinOff = 0;
+    this.spinSum = 0;
+    this.burnLeft = 0;
+    this.burnMax = 0;
     this.trail = [];
     this.syncPrev();
     this.syncRender();

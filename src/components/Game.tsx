@@ -31,6 +31,7 @@ const initialSnap: Snap = {
   glideFuel: 1,
   tip: null,
   settings: { sound: true, music: true, vibration: true },
+  missions: [],
 };
 
 const canVibrate = typeof navigator !== "undefined" && "vibrate" in navigator;
@@ -40,6 +41,7 @@ export default function GameScreen() {
   const gameRef = useRef<Game | null>(null);
   const [snap, setSnap] = useState<Snap>(initialSnap);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [missionsOpen, setMissionsOpen] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -147,6 +149,37 @@ export default function GameScreen() {
               {snap.best > 0 && (
                 <div className="text-[14px] tabular-nums text-white/45">
                   Best {snap.best} m
+                </div>
+              )}
+              <Button onClick={() => setMissionsOpen((v) => !v)}>
+                {missionsOpen
+                  ? "Hide missions"
+                  : `Missions ${snap.missions.filter((m) => m.done).length}/${snap.missions.length}`}
+              </Button>
+              {missionsOpen && (
+                <div className="pointer-events-auto max-h-[36vh] w-[min(340px,86vw)] overflow-y-auto rounded-2xl bg-white/5 px-4 py-2">
+                  {snap.missions.map((m) => (
+                    <div key={m.id} className="flex items-center gap-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div
+                          className={`text-[14px] font-semibold ${m.done ? "text-[#7df0ff]" : "text-white"}`}
+                        >
+                          {m.done ? "✓ " : ""}
+                          {m.title}
+                        </div>
+                        <div className="text-[12px] text-white/50">{m.text}</div>
+                        <div className="mt-1.5 h-1 w-full overflow-hidden rounded bg-white/10">
+                          <div
+                            className="h-full bg-[#7df0ff]"
+                            style={{ width: `${(m.progress / m.target) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="text-[12px] tabular-nums text-white/55">
+                        {m.progress}/{m.target}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

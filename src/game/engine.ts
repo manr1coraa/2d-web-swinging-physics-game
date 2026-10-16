@@ -5,6 +5,7 @@ import { Sfx } from "./audio";
 import { Renderer } from "./renderer";
 import { clamp, lerp, dist, noise1 } from "./util";
 import { live as T } from "./tuning";
+import { progress, type MissionView } from "./progress";
 
 export type GameState = "menu" | "playing" | "dying" | "dead" | "paused";
 
@@ -25,6 +26,7 @@ export interface Snap {
   glideFuel: number; // 0..1
   tip: Tip | null;
   settings: Settings;
+  missions: MissionView[];
 }
 
 export interface Tip {
@@ -110,6 +112,8 @@ export class Game {
   private slowT = 0; // real seconds of release slow motion left
   lowAlt = 0;
   private autoRetryT = 0;
+  private airFlips = 0; // turns completed in the current air time
+  private missionT = 0; // timer for polling missions
 
   // tutorial
   tip: Tip | null = null;
@@ -201,6 +205,8 @@ export class Game {
     this.snapFx = null;
     this.autoRetryT = 0;
     this.attachTime = -10;
+    this.airFlips = 0;
+    this.missionT = 0;
     this.gliding = false;
     this.glideHold = false;
     this.glideFuel = T.glideFuel;
@@ -407,11 +413,18 @@ export class Game {
       Math.abs(ang) <= T.perfectAngleDeg && sp >= T.perfectMinSpeed;
     this.snapFx = { px: p.x, py: p.y, ax: p.ax, ay: p.ay, t: 0.26 };
     p.detach();
+    p.burnLeft = 0;
+    p.burnMax = 0;
+    // automatic flip: a faster release spins faster
+    p.spin = (p.vx >= 0 ? 1 : -1) * T.flipSpin * clamp(p.speed() / 700, 0.4, 1.6);
+    p.spinSum = 0;
+    this.airFlips = 0;
     this.sfx.whoosh();
     this.parts.burst(p.x, p.y, "rgba(235,250,255,1)", 3, 110, 2.2, 0.35, 220);
     p.stretchOnRelease();
     if (perfect) {
       this.perfectCombo += 1;
+      progress.max("bestChain", this.perfectCombo);
       // the chain earns speed one link at a time, up to a cap
       if (this.perfectCombo <= T.perfectChainSpeedCap) {
         const k = 1 + T.perfectGain;
@@ -502,6 +515,12 @@ export class Game {
     const cand = this.findBestAnchor() ?? this.findBestAnchor(true);
     if (!cand) return false;
     p.attach(cand.x, cand.y);
+    p.spin = 0;
+    p.spinSum = 0;
+    this.airFlips = 0;
+    const burn = this.burningAt(cand.x, cand.y);
+    p.burnLeft = burn ? T.burnTime : 0;
+    p.burnMax = burn ? T.burnTime : 0;
     this.attachTime = this.time;
     this.firstClick = true;
     this.parts.burst(cand.x, cand.y, "rgba(126,240,255,1)", 4, 120, 2.2, 0.3, 120);
@@ -510,6 +529,74 @@ export class Game {
     this.sfx.thwip();
     this.emit();
     return true;
+  }
+
+  /** is this anchor on a burning ledge */
+  private burningAt(ax: number, ay: number): boolean {
+    let hit = false;
+    this.world.eachNear(ax, (o) => {
+      if (o.kind !== "plat" || !o.burn || hit) return;
+      if (Math.abs(ax - o.x) <= o.w / 2 + 4 && Math.abs(ay - o.y) <= o.h / 2 + 8)
+        hit = true;
+    });
+    return hit;
+  }
+
+  /** is the point inside an updraft column */
+  private inWind(x: number, y: number): boolean {
+    let hit = false;
+    this.world.eachNear(x, (o) => {
+      if (o.kind !== "wind" || hit) return;
+      if (Math.abs(x - o.x) <= o.w / 2 && y >= o.yTop && y <= o.yBot) hit = true;
+    });
+    return hit;
+  }
+
+  /** the web tears on a burning ledge: the spider drops, no reward */
+  private tearWeb() {
+    const p = this.player;
+    const x = p.ax;
+    const y = p.ay;
+    p.detach();
+    p.burnLeft = 0;
+    p.burnMax = 0;
+    this.autoRetryT = 0.5; // don't re-hook the same ledge at once
+    progress.add("tears", 1);
+    this.parts.burst(x, y, "#ff8a3d", 14, 260, 2.6, 0.6, 380);
+    this.parts.burst(x, y, "#ffd27a", 8, 160, 2, 0.5, 300);
+    this.popup(p.x, p.y - 40, "SNAP!", "#ff8a3d", 20);
+    this.trauma = Math.max(this.trauma, 0.35);
+    this.sfx.shieldBreak();
+    this.emit();
+  }
+
+  /** one full turn in the air: a flip, or a double flip for the second one */
+  private flipDone() {
+    const p = this.player;
+    this.airFlips += 1;
+    progress.add("flips", 1);
+    if (this.airFlips >= 2) {
+      progress.add("doubles", 1);
+      this.popup(p.x, p.y - 56, "DOUBLE FLIP", "#ffd27a", 22);
+      this.sfx.perfect(4);
+    } else {
+      this.popup(p.x, p.y - 52, "FLIP", "#ffffff", 18);
+      this.sfx.tick();
+    }
+    this.parts.ring(p.x, p.y, "rgba(255,255,255,0.7)", 6, 0.35);
+  }
+
+  /** check missions now and announce new ones; cheap, called on a timer */
+  private pollMissions() {
+    progress.max("bestDist", this.distM);
+    const fresh = progress.check();
+    for (const id of fresh) {
+      const m = progress.list().find((x) => x.id === id);
+      if (!m) continue;
+      this.popup(this.player.x, this.player.y - 80, `MISSION: ${m.title}`, "#7df0ff", 18);
+      this.sfx.milestone();
+    }
+    if (fresh.length) this.emit();
   }
 
   private popup(x: number, y: number, str: string, color: string, size = 22) {
@@ -630,6 +717,12 @@ export class Game {
     if (this.coinChainT > 0) {
       this.coinChainT -= dt;
       if (this.coinChainT <= 0) this.coinChain = 0;
+    }
+
+    this.missionT -= dt;
+    if (this.missionT <= 0) {
+      this.missionT = 0.25;
+      this.pollMissions();
     }
 
     this.updateCamera(dt, p);
@@ -768,6 +861,30 @@ export class Game {
       this.state === "playing";
     if (glide && !this.gliding) this.popup(p.x, p.y - 40, "GLIDE", "#7df0ff", 16);
     this.gliding = glide;
+
+    // automatic flip and updraft lift only exist in the air
+    const air = !p.attached && !p.grounded && this.state === "playing";
+    if (p.grounded) p.spin = 0;
+    if (air) {
+      if (p.spin !== 0) {
+        p.spinOff += p.spin * h;
+        p.spinSum += Math.abs(p.spin) * h;
+        if (p.spinSum >= Math.PI * 2) {
+          p.spinSum -= Math.PI * 2;
+          this.flipDone();
+        }
+      }
+      if (this.inWind(p.x, p.y)) {
+        p.vy -= T.windPush * h;
+        if (this.holdWeb) {
+          p.vy -= T.windHold * h;
+          progress.add("windT", h);
+        }
+      }
+    } else if (p.spin === 0) {
+      // settle the body back to the flight direction
+      p.spinOff *= Math.max(0, 1 - 9 * h);
+    }
     if (glide) {
       // wing: gravity is reduced and lift grows with v_x²
       // speed in screen widths per second, capped at 1
@@ -854,6 +971,10 @@ export class Game {
       const sa = SW * SW * (0 - p.sway) - 2 * T.swayDamp * SW * p.swayV;
       p.swayV += sa * h;
       p.sway += p.swayV * h;
+    }
+    if (p.attached && p.burnLeft > 0) {
+      p.burnLeft -= h;
+      if (p.burnLeft <= 0) this.tearWeb();
     }
     this.collide();
   }
@@ -1032,6 +1153,8 @@ export class Game {
       this.best = this.distM;
       this.newBest = true;
     }
+    progress.save();
+    this.pollMissions();
     this.sfx.setWind(0);
     this.emit();
   }
@@ -1112,6 +1235,7 @@ export class Game {
       st.sound,
       st.music,
       st.vibration,
+      progress.done.size,
     ].join("|");
     if (key === this.lastKey) return;
     this.lastKey = key;
@@ -1126,6 +1250,7 @@ export class Game {
       glideFuel: this.glideFuel / T.glideFuel,
       tip: this.tip,
       settings: { ...st },
+      missions: progress.list(),
     });
   }
 }

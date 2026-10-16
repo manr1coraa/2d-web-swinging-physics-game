@@ -4,7 +4,8 @@ import { SEGMENTS, Piece, PIECE_W, type Role, type Segment } from "./segments";
 export type Obj =
   | { kind: "stal"; x: number; y: number; len: number; w: number }
   | { kind: "spire"; x: number; tip: number; base: number; w: number }
-  | { kind: "plat"; x: number; y: number; w: number; h: number }
+  | { kind: "plat"; x: number; y: number; w: number; h: number; burn?: boolean }
+  | { kind: "wind"; x: number; w: number; yTop: number; yBot: number }
   | { kind: "saw"; x: number; y: number; r: number; bob: number; ph: number }
   | { kind: "shield"; x: number; y: number; r: number; got: boolean }
   | { kind: "coin"; x: number; y: number; got: boolean };

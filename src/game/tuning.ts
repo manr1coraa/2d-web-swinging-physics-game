@@ -88,6 +88,26 @@ export const tuning = {
   /** fuel regained per second while swinging or standing on a platform */
   glideRefill: 0.6,
 
+  // ---- tricks ------------------------------------------------------------
+  /**
+   * Spin rate of an automatic flip after a release, rad/s, at 700 px/s.
+   * It scales with speed, so a fast release spins faster. One full turn
+   * (2π) is a flip, two in one air time is a double flip.
+   */
+  flipSpin: 6,
+  /** points of the flip bonus shown when a flip completes (popup only) */
+  flipBonus: 100,
+
+  // ---- updrafts ----------------------------------------------------------
+  /** gentle lift inside an updraft, px/s² (about half of gravity) */
+  windPush: 700,
+  /** extra lift while Space is held inside an updraft, px/s² */
+  windHold: 1300,
+
+  // ---- burning buildings -------------------------------------------------
+  /** seconds a web holds on a burning ledge before it tears */
+  burnTime: 2.2,
+
   // ---- camera -----------------------------------------------------------
   /** camera spring stiffness (natural frequency, rad/s), horizontal */
   camFollow: 7,
@@ -120,6 +140,10 @@ export const tuningRanges: [keyof typeof tuning, number, number, number, string]
   ["swayStiff", 2, 30, 0.5, "web sway stiffness"],
   ["swayDamp", 0, 1, 0.01, "web sway damping"],
   ["reelRate", 0, 400, 5, "reel pump px/s"],
+  ["flipSpin", 0, 14, 0.5, "flip spin rad/s"],
+  ["windPush", 0, 1400, 10, "updraft lift"],
+  ["windHold", 0, 2600, 10, "updraft hold lift"],
+  ["burnTime", 0.5, 6, 0.1, "burn time s"],
   ["ropeMin", 30, 200, 2, "rope min"],
   ["ropeMax", 200, 600, 5, "rope max"],
   ["perfectAngleDeg", 5, 45, 1, "perfect angle°"],

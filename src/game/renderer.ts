@@ -466,6 +466,31 @@ export class Renderer {
     const { ctx } = this;
     const t = g.time;
     switch (o.kind) {
+      /* ---- updraft column: hold Space inside it to climb ---- */
+      case "wind": {
+        const hw = o.w / 2;
+        const grad = ctx.createLinearGradient(0, o.yBot, 0, o.yTop);
+        grad.addColorStop(0, "rgba(125,240,255,0.02)");
+        grad.addColorStop(0.5, "rgba(125,240,255,0.11)");
+        grad.addColorStop(1, "rgba(125,240,255,0.02)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(o.x - hw, o.yTop, o.w, o.yBot - o.yTop);
+        // rising streaks show the direction of the air
+        ctx.strokeStyle = "rgba(210,250,255,0.4)";
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        for (let k = 0; k < 6; k++) {
+          const ph = (t * 0.9 + k / 6) % 1;
+          const yy = o.yBot - ph * (o.yBot - o.yTop);
+          const xx = o.x + (k % 2 === 0 ? -1 : 1) * hw * 0.45;
+          ctx.beginPath();
+          ctx.moveTo(xx, yy);
+          ctx.lineTo(xx, yy + 16);
+          ctx.stroke();
+        }
+        break;
+      }
+
       /* ---- scaffold / billboard platform (safe, landable) ---- */
       case "plat": {
         const x = o.x - o.w / 2;
@@ -489,6 +514,7 @@ export class Renderer {
         ctx.strokeStyle = "rgba(120,140,255,0.4)";
         ctx.lineWidth = 2;
         ctx.stroke();
+        if (o.burn) this.flames(o.x, y, o.w, t);
         // neon sign strip
         ctx.strokeStyle = TRIM;
         ctx.lineWidth = 3;
@@ -848,6 +874,33 @@ export class Renderer {
     }
   }
 
+  /** burning ledge: flickering flames over the deck */
+  private flames(cx: number, top: number, w: number, t: number) {
+    const { ctx } = this;
+    const x0 = cx - w / 2;
+    const n = Math.max(3, Math.floor(w / 16));
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (let k = 0; k < n; k++) {
+      const fx = x0 + 8 + k * ((w - 16) / (n - 1 || 1));
+      const h = 18 + Math.sin(t * 9 + k * 1.7) * 5 + Math.sin(t * 23 + k) * 2;
+      const sway = Math.sin(t * 6 + k * 2.3) * 3;
+      for (const [col, sc] of [
+        ["rgba(255,110,40,0.75)", 1],
+        ["rgba(255,215,120,0.8)", 0.55],
+      ] as const) {
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(fx - 8 * sc, top + 2);
+        ctx.quadraticCurveTo(fx + sway * sc, top - h * 0.6, fx + sway * 0.5 * sc, top - h * sc);
+        ctx.quadraticCurveTo(fx + sway * sc, top - h * 0.6, fx + 8 * sc, top + 2);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
   private rope(g: Game) {
     const { ctx } = this;
     const p = g.player;
@@ -885,6 +938,15 @@ export class Renderer {
     ctx.stroke();
     ctx.setLineDash([]);
     path();
+    // a web on a burning ledge heats up and turns red-orange until it tears
+    if (p.burnMax > 0 && p.burnLeft > 0) {
+      const heat = clamp(1 - p.burnLeft / p.burnMax, 0, 1);
+      path();
+      ctx.strokeStyle = `rgba(255,${Math.round(160 - 100 * heat)},60,${(0.35 + 0.6 * heat).toFixed(3)})`;
+      ctx.lineWidth = 3 + 2 * heat;
+      ctx.stroke();
+    }
+    path();
     ctx.strokeStyle = "rgba(242,254,255,0.95)";
     ctx.lineWidth = 1.7;
     ctx.stroke();
@@ -905,7 +967,8 @@ export class Renderer {
     const { ctx } = this;
     const p = g.player;
     const sp = p.speed() || 1;
-    const ang = Math.atan2(p.vy, p.vx || 0.0001);
+    // flight direction plus the automatic flip rotation
+    const ang = Math.atan2(p.vy, p.vx || 0.0001) + p.spinOff;
     const wob = Math.sin(g.time * 11 + sp * 0.01);
 
     if (g.shieldActive) {
