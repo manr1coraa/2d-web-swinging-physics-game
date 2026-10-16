@@ -474,8 +474,8 @@ export class Game {
       const theta = (Math.atan2(dx, -dy) * 180) / Math.PI; // 0 = straight up
       if (theta > maxTheta) return;
       let score = 0;
-      score += Math.abs(theta - 40) * 1.6; // ~40° ahead is the sweet spot
-      score += Math.abs(d - 215) * 0.35; // mid-length ropes swing best
+      score += Math.abs(theta - T.aimIdealDeg) * 1.6; // ~40° ahead is the sweet spot
+      score += Math.abs(d - T.aimIdealLen) * 0.35; // mid-length ropes swing best
       // would the pendulum dip into lava? (rope may also spool +70)
       if (ay + d + 70 + p.r + 12 > w.lavaY(ax)) score += 500;
       // line of sight — the surface must actually block the ray there
