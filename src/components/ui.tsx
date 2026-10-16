@@ -1,77 +1,138 @@
 import type { ReactNode } from "react";
 
-/** chunky tactile button with a solid bottom edge — indie arcade feel */
-export function ChunkyButton({
+/* ---------- icons: single 2px stroke family, drawn for this game ---------- */
+
+const base = {
+  width: 22,
+  height: 22,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+};
+
+export function PauseIcon() {
+  return (
+    <svg {...base} fill="currentColor" stroke="none">
+      <rect x="6.5" y="5" width="3.6" height="14" rx="1.2" />
+      <rect x="13.9" y="5" width="3.6" height="14" rx="1.2" />
+    </svg>
+  );
+}
+
+export function SlidersIcon() {
+  return (
+    <svg {...base}>
+      <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+      <circle cx="15" cy="7" r="2" />
+      <circle cx="9" cy="17" r="2" />
+    </svg>
+  );
+}
+
+export function BackIcon() {
+  return (
+    <svg {...base}>
+      <path d="M15 5l-7 7 7 7" />
+    </svg>
+  );
+}
+
+/* ---------- primitives ---------- */
+
+export function IconButton({
   children,
+  label,
   onClick,
-  tone = "primary",
-  size = "md",
   className = "",
-  ariaLabel,
 }: {
   children: ReactNode;
+  label: string;
   onClick?: () => void;
-  tone?: "primary" | "dark" | "ghost" | "gold";
-  size?: "sm" | "md" | "lg";
   className?: string;
-  ariaLabel?: string;
 }) {
-  const tones = {
-    primary:
-      "bg-[#ff5172] text-white border-[#b81f42] shadow-[0_8px_0_0_#b81f42,0_18px_34px_-10px_rgba(255,81,114,0.75)] hover:bg-[#ff6682]",
-    gold: "bg-[#ffc53d] text-[#4a2e00] border-[#b8801a] shadow-[0_8px_0_0_#b8801a,0_18px_34px_-12px_rgba(255,197,61,0.7)] hover:bg-[#ffd25f]",
-    dark: "bg-[#222a52] text-white border-[#121734] shadow-[0_8px_0_0_#121734,0_16px_30px_-14px_rgba(0,0,0,0.9)] hover:bg-[#2b3463]",
-    ghost:
-      "bg-white/8 text-white/80 border-white/10 shadow-[0_6px_0_0_rgba(255,255,255,0.07)] hover:bg-white/14 hover:text-white",
-  };
-  const sizes = {
-    sm: "px-4 py-2 text-xs gap-1.5",
-    md: "px-6 py-3 text-sm gap-2",
-    lg: "px-9 py-4 text-base gap-2.5",
-  };
   return (
     <button
+      type="button"
+      aria-label={label}
       onClick={onClick}
-      aria-label={ariaLabel}
-      className={`font-display inline-flex items-center justify-center rounded-2xl border-b-2 font-extrabold uppercase tracking-[0.1em] transition-all duration-100 active:translate-y-[6px] active:shadow-none ${tones[tone]} ${sizes[size]} ${className}`}
+      className={`pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-ink/45 text-paper transition-transform duration-150 ease-ios active:scale-95 ${className}`}
     >
       {children}
     </button>
   );
 }
 
-/** round icon button */
-export function RoundButton({
+export function PrimaryButton({
   children,
   onClick,
-  title,
-  ariaLabel,
-  active = false,
+  className = "",
 }: {
   children: ReactNode;
   onClick?: () => void;
-  title?: string;
-  ariaLabel?: string;
-  active?: boolean;
+  className?: string;
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      title={title}
-      aria-label={ariaLabel}
-      className={`flex h-11 w-11 items-center justify-center rounded-2xl border-b-2 transition-all duration-100 active:translate-y-[4px] active:shadow-none ${
-        active
-          ? "border-[#b81f42] bg-[#ff5172] text-white shadow-[0_5px_0_0_#b81f42]"
-          : "border-black/40 bg-[#1b2246]/85 text-white/75 shadow-[0_5px_0_0_rgba(0,0,0,0.4)] hover:bg-[#242d5c] hover:text-white"
+      className={`pointer-events-auto flex h-14 w-full items-center justify-center rounded-2xl bg-paper text-[17px] font-semibold text-ink transition-transform duration-150 ease-ios active:scale-[0.98] ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function GhostButton({
+  children,
+  onClick,
+  className = "",
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`pointer-events-auto flex h-12 w-full items-center justify-center rounded-2xl bg-paper/[0.08] text-[17px] font-medium text-paper transition-colors duration-150 ease-ios active:bg-paper/[0.14] ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function Toggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`pointer-events-auto relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors duration-200 ease-ios ${
+        checked ? "bg-amber" : "bg-paper/20"
       }`}
     >
-      {children}
+      <span
+        className={`absolute left-[2px] top-[2px] h-[27px] w-[27px] rounded-full bg-paper shadow-sm transition-transform duration-200 ease-ios ${
+          checked ? "translate-x-[20px]" : ""
+        }`}
+      />
     </button>
   );
 }
 
-/** soft panel card */
-export function Panel({
+/** bottom sheet used for pause and settings */
+export function Sheet({
   children,
   className = "",
 }: {
@@ -79,34 +140,11 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <div
-      className={`rounded-[28px] border border-white/10 bg-gradient-to-b from-[#1a2048]/95 to-[#121634]/95 shadow-[0_28px_70px_-18px_rgba(0,0,0,0.85),inset_0_1px_0_0_rgba(255,255,255,0.12)] backdrop-blur-xl ${className}`}
-    >
-      {children}
+    <div className={`absolute inset-0 flex items-end bg-ink/60 anim-fade ${className}`}>
+      <div className="anim-sheet w-full rounded-t-[28px] bg-ink-2 px-6 pb-[calc(env(safe-area-inset-bottom)+20px)] pt-3">
+        <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-paper/20" />
+        {children}
+      </div>
     </div>
-  );
-}
-
-/** rotated sticker badge */
-export function Sticker({
-  children,
-  tone = "gold",
-  className = "",
-}: {
-  children: ReactNode;
-  tone?: "gold" | "cyan" | "coral";
-  className?: string;
-}) {
-  const tones = {
-    gold: "bg-[#ffc53d] text-[#4a2e00] shadow-[0_6px_0_0_#b8801a]",
-    cyan: "bg-[#49d8ff] text-[#06293a] shadow-[0_6px_0_0_#1a93bd]",
-    coral: "bg-[#ff5172] text-white shadow-[0_6px_0_0_#b81f42]",
-  };
-  return (
-    <span
-      className={`font-display inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.14em] ${tones[tone]} ${className}`}
-    >
-      {children}
-    </span>
   );
 }

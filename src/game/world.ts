@@ -5,9 +5,6 @@ export type Obj =
   | { kind: "spire"; x: number; tip: number; base: number; w: number }
   | { kind: "plat"; x: number; y: number; w: number; h: number }
   | { kind: "saw"; x: number; y: number; r: number; bob: number; ph: number }
-  | { kind: "boost"; x: number; y: number; r: number; used: boolean }
-  | { kind: "shield"; x: number; y: number; r: number; got: boolean }
-  | { kind: "magnet"; x: number; y: number; r: number; got: boolean }
   | { kind: "coin"; x: number; y: number; got: boolean };
 
 export interface Chunk {
@@ -208,112 +205,9 @@ export class World {
         const fy = plat0.y - 84 - Math.sin((k / (n - 1)) * Math.PI) * 26;
         objs.push({ kind: "coin", x: fx, y: fy, got: false });
       }
-    } else if (coinRoll < 0.92) {
-      const cx = x0 + 110 + r(31) * (this.cw - 220);
-      const lo = this.ceilY(cx) + 150;
-      const hi = this.lavaY(cx) - 150;
-      if (hi - lo > 60) {
-        const cy = clamp(lo + r(32) * (hi - lo), lo + 20, hi - 10);
-        const n = 3 + Math.floor(r(33) * 2);
-        for (let k = 0; k < n; k++) {
-          const fx = cx + (k - (n - 1) / 2) * 36;
-          const fy = cy - Math.cos(((k - (n - 1) / 2) / n) * Math.PI) * 34;
-          if (spires.some((px) => Math.abs(px - fx) < 70)) continue;
-          objs.push({ kind: "coin", x: fx, y: fy, got: false });
-        }
-      }
     }
-
-    // ---- boost rings (speed pickups) ----
-    const wantBoost = i === 4 || (i > 2 && r(40) < 0.22 + 0.16 * t);
-    if (wantBoost) {
-      const attempts = i === 5 ? 6 : 2; // tutorial ring must land
-      for (let a = 0; a < attempts; a++) {
-        const bx = x0 + 90 + hash(i * 7.31 + a * 3.97 + 40.2) * (this.cw - 180);
-        if (spires.some((px) => Math.abs(px - bx) < 130)) continue;
-        const lo = this.ceilY(bx) + 150;
-        const hi = this.lavaY(bx) - 150;
-        if (hi - lo <= 60) continue;
-        objs.push({
-          kind: "boost",
-          x: bx,
-          y: clamp(lo + r(42) * (hi - lo), lo, hi),
-          r: 24,
-          used: false,
-        });
-        break;
-      }
-    }
-
-    // ---- power-up orbs (shield / magnet) ----
-    if (i === 7 || (i > 5 && r(44) < 0.17 + 0.05 * t))
-      this.placePower(objs, spires, plats, i, "shield", 44, i === 7);
-    if (i === 10 || (i > 8 && r(46) < 0.13 + 0.05 * t))
-      this.placePower(objs, spires, plats, i, "magnet", 46, i === 10);
 
     return { i, x0, x1, gapA, gapB, isGap, objs };
-  }
-
-  /** place a shield/magnet orb in a safe, reachable spot */
-  private placePower(
-    objs: Obj[],
-    spires: number[],
-    plats: { x: number; y: number; w: number }[],
-    i: number,
-    kind: "shield" | "magnet",
-    seed: number,
-    force: boolean,
-  ) {
-    const x0 = i * this.cw;
-    const rr = (n: number) => hash(i * 5.19 + seed * 7.77 + n * 3.13);
-    const attempts = force ? 10 : 2;
-    for (let a = 0; a < attempts; a++) {
-      let px: number;
-      let py: number;
-      const p0 = plats[a % Math.max(1, plats.length)];
-      if (p0 && rr(1 + a * 7) < 0.45) {
-        // hovering above a platform reads as a reward stop
-        px = p0.x + (rr(8 + a) - 0.5) * 60;
-        py = p0.y - 95;
-      } else if (force) {
-        // scan the whole chunk evenly — a tutorial orb must always land
-        px = x0 + 60 + (a + 0.5) * ((this.cw - 120) / attempts);
-        px += (rr(2 + a) - 0.5) * 30;
-        const lo = this.ceilY(px) + 150;
-        const hi = this.lavaY(px) - 150;
-        if (hi - lo <= 60) continue;
-        py = clamp(lo + rr(3 + a) * (hi - lo), lo, hi);
-      } else {
-        px = x0 + 90 + rr(2 + a) * (this.cw - 180);
-        const lo = this.ceilY(px) + 150;
-        const hi = this.lavaY(px) - 150;
-        if (hi - lo <= 60) continue;
-        py = clamp(lo + rr(3 + a) * (hi - lo), lo, hi);
-      }
-      if (spires.some((sx) => Math.abs(sx - px) < (force ? 100 : 120))) continue;
-      if (
-        !force &&
-        objs.some(
-          (o) =>
-            (o.kind === "boost" || o.kind === "shield" || o.kind === "magnet") &&
-            Math.abs(o.x - px) < 110 &&
-            Math.abs(o.y - py) < 120,
-        )
-      )
-        continue;
-      if (
-        force &&
-        objs.some(
-          (o) =>
-            (o.kind === "boost" || o.kind === "shield" || o.kind === "magnet") &&
-            Math.abs(o.x - px) < 60 &&
-            Math.abs(o.y - py) < 70,
-        )
-      )
-        continue;
-      objs.push({ kind, x: px, y: py, r: 17, got: false });
-      return;
-    }
   }
 
   private ceilSolidX(chunkI: number, x: number): boolean {

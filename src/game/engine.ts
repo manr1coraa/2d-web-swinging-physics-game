@@ -7,115 +7,37 @@ import { clamp, lerp, dist, noise1 } from "./util";
 
 export type GameState = "menu" | "playing" | "dying" | "dead" | "paused";
 
+export interface Settings {
+  sound: boolean;
+  music: boolean;
+  haptics: boolean;
+}
+
 export interface Snap {
   state: GameState;
   dist: number;
-  coins: number;
   best: number;
   newBest: boolean;
-  muted: boolean;
   maxSpeed: number;
   cause: string;
-  showHint: boolean;
-  shield: boolean;
-  magnetT: number;
+  combo: number; // length of the current perfect-release chain
   tip: Tip | null;
-  graceT: number;
-  gliding: boolean;
-  announce: Announce | null;
   lowAlt: number; // 0..1 — how close to the street you are
+  settings: Settings;
 }
 
 export interface Tip {
   id: string;
-  title: string;
   text: string;
-  tone: "info" | "danger" | "good";
 }
 
-/** contextual lessons, fired the first time you approach each thing */
+/** the only three lessons in the whole game — each is shown once, in the scene */
 export const TIPS: Record<string, Tip> = {
-  swing: {
-    id: "swing",
-    title: "Hold to swing",
-    text: "Hold SPACE or press anywhere — the web picks a ledge by itself. Let go to fly.",
-    tone: "info",
-  },
-  glide: {
-    id: "glide",
-    title: "Glide mode",
-    text: "Hold GLIDE (or SHIFT) to spread web-wings. Fast glides climb, and updrafts above the street always carry you back up.",
-    tone: "good",
-  },
-  street: {
-    id: "street",
-    title: "Mind the street",
-    text: "Hitting the avenue ends the run. Keep your arc above the traffic.",
-    tone: "danger",
-  },
-  pump: {
-    id: "pump",
-    title: "You pump the web",
-    text: "While attached you actively work the line — the longer you hold, the more speed you build.",
-    tone: "good",
-  },
-  stal: {
-    id: "stal",
-    title: "Construction girder",
-    text: "Steel beams with hazard stripes hang from above. Swing under or around them.",
-    tone: "danger",
-  },
-  spire: {
-    id: "spire",
-    title: "Skyscraper",
-    text: "Towers rise from the street. Crashing into one is fatal — web over the roof.",
-    tone: "danger",
-  },
-  saw: {
-    id: "saw",
-    title: "Patrol drone",
-    text: "Those rotors hurt. Time your arc so you pass well clear of the red eye.",
-    tone: "danger",
-  },
-  plat: {
-    id: "plat",
-    title: "Scaffold",
-    text: "Safe to land on and to web onto. Great for resetting a bad line.",
-    tone: "good",
-  },
-  coin: {
-    id: "coin",
-    title: "Coins",
-    text: "Strung along the ideal arc. Chain them for a rising combo jingle.",
-    tone: "good",
-  },
-  boost: {
-    id: "boost",
-    title: "Boost ring",
-    text: "Fly through for a burst of speed. Great right before a long gap.",
-    tone: "good",
-  },
-  shield: {
-    id: "shield",
-    title: "Shield bubble",
-    text: "Absorbs one fatal hit and throws you back into the air. One save per pickup.",
-    tone: "good",
-  },
-  magnet: {
-    id: "magnet",
-    title: "Magnet",
-    text: "Pulls every nearby coin to you for nine seconds.",
-    tone: "good",
-  },
+  hold: { id: "hold", text: "Держи, чтобы выстрелить паутиной" },
+  release: { id: "release", text: "Отпусти внизу дуги — там самая скорость" },
+  street: { id: "street", text: "Не касайся улицы" },
 };
-
-/** full-screen transformation callout */
-export interface Announce {
-  id: string;
-  kind: "shield" | "magnet" | "boost" | "glide" | "perfect" | "save";
-  title: string;
-  sub: string;
-}
+const TIP_TIME = 3.2;
 
 export interface Popup {
   x: number;
@@ -125,6 +47,19 @@ export interface Popup {
   size: number;
   life: number;
   max: number;
+}
+
+const SETTINGS_KEY = "webby_settings";
+const DEFAULT_SETTINGS: Settings = { sound: true, music: true, haptics: true };
+
+function loadSettings(): Settings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
+  } catch {
+    /* ignore */
+  }
+  return { ...DEFAULT_SETTINGS };
 }
 
 const G = 1930; // gravity px/s^2 — lighter, floatier arcs
@@ -142,7 +77,6 @@ const UPDRAFT_H = 330; // height above the street where thermals kick in
 const UPDRAFT_VY = -330; // how hard the updraft lifts you clear
 const GRACE = 3.2; // seconds of invulnerability at the start of a run
 const METER = 50; // px per meter
-const MAGNET_TIME = 9;
 
 const BEST_KEY = "pauchok_best";
 const TAUGHT_KEY = "webby_taught";
@@ -180,9 +114,9 @@ export class Game {
   glideHold = false; // explicit glide input (button / key)
   graceT = 0;
   lowAlt = 0;
-  announce: Announce | null = null;
-  private announceT = 0;
   private autoRetryT = 0;
+  demoT = 0; // menu backdrop clock
+  settings: Settings = loadSettings();
 
   // tutorial
   tip: Tip | null = null;
@@ -201,10 +135,6 @@ export class Game {
   private dyingT = 0;
   private deadAt = -10;
 
-  // power-ups
-  shieldActive = false;
-  magnetT = 0;
-  private invulnT = 0;
   private perfectCombo = 0;
   private lastMilestone = 0;
 
@@ -217,6 +147,7 @@ export class Game {
   constructor(canvas: HTMLCanvasElement, cb: (s: Snap) => void) {
     this.cb = cb;
     this.renderer = new Renderer(canvas);
+    this.sfx.setMuted(!this.settings.sound);
     try {
       this.best = parseInt(localStorage.getItem(BEST_KEY) ?? "0", 10) || 0;
       const saved = localStorage.getItem(TAUGHT_KEY);
@@ -256,9 +187,6 @@ export class Game {
     this.coinChain = 0;
     this.firstClick = false;
     this.trauma = 0;
-    this.shieldActive = false;
-    this.magnetT = 0;
-    this.invulnT = 0;
     this.perfectCombo = 0;
     this.lastMilestone = 0;
     this.holdWeb = false;
@@ -269,8 +197,6 @@ export class Game {
     this.pumpFx = 0;
     this.gliding = false;
     this.glideHold = false;
-    this.announce = null;
-    this.announceT = 0;
     this.graceT = GRACE;
     this.tip = null;
     this.tipT = 0;
@@ -280,7 +206,7 @@ export class Game {
     this.state = "playing";
     this.sfx.ensure();
     this.sfx.start();
-    this.sfx.padStart();
+    if (this.settings.music) this.sfx.padStart();
     // onboarding: first swing is free — shows what to do
     const ax = this.player.x + 135;
     this.player.attach(ax, this.world.ceilY(ax) + 2);
@@ -313,8 +239,34 @@ export class Game {
   }
 
   toggleMute() {
-    this.sfx.setMuted(!this.sfx.muted);
+    this.setSetting("sound", this.sfx.muted);
+  }
+
+  /** settings from the menu / pause sheet — persisted */
+  setSetting<K extends keyof Settings>(k: K, v: boolean) {
+    this.settings = { ...this.settings, [k]: v };
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings));
+    } catch {
+      /* ignore */
+    }
+    if (k === "sound") this.sfx.setMuted(!v);
+    if (k === "music") {
+      if (v && this.state === "playing") this.sfx.padStart();
+      else this.sfx.padStop();
+    }
+    if (k === "haptics" && v) this.haptic(12);
     this.emit();
+  }
+
+  /** short vibration where the platform supports it (iOS Safari does not) */
+  private haptic(pattern: number | number[]) {
+    if (!this.settings.haptics) return;
+    try {
+      navigator.vibrate?.(pattern);
+    } catch {
+      /* unsupported */
+    }
   }
 
   /** explicit glide input — held from a button or a key */
@@ -323,20 +275,8 @@ export class Game {
     this.glideHold = on;
     if (on && this.state === "playing") {
       if (this.player.attached) this.release(false);
-      this.showAnnounce({
-        id: "glide" + Math.floor(this.time * 10),
-        kind: "glide",
-        title: "GLIDE MODE",
-        sub: "web-wings deployed",
-      });
-      this.sfx.magnetUp();
+      this.sfx.whoosh();
     }
-    this.emit();
-  }
-
-  private showAnnounce(a: Announce) {
-    this.announce = a;
-    this.announceT = 1.5;
     this.emit();
   }
 
@@ -463,19 +403,13 @@ export class Game {
       this.popup(
         p.x,
         p.y - 52,
-        this.perfectCombo > 1 ? `PERFECT ×${this.perfectCombo}` : "PERFECT!",
-        "#7df0ff",
-        24,
+        this.perfectCombo > 1 ? `Идеально ×${this.perfectCombo}` : "Идеально",
+        "#ffb547",
+        22,
       );
       this.parts.ring(p.x, p.y, "rgba(125,240,255,0.9)", 8, 0.45);
       this.sfx.perfect(this.perfectCombo);
-      if (this.perfectCombo >= 3)
-        this.showAnnounce({
-          id: "perfect" + this.perfectCombo,
-          kind: "perfect",
-          title: `PERFECT ×${this.perfectCombo}`,
-          sub: "flawless release chain",
-        });
+      this.haptic(8);
     } else {
       this.perfectCombo = 0;
     }
@@ -563,7 +497,7 @@ export class Game {
 
   private popup(x: number, y: number, str: string, color: string, size = 22) {
     if (this.texts.length > 8) this.texts.shift();
-    this.texts.push({ x, y, str, color, size, life: 0.95, max: 0.95 });
+    this.texts.push({ x, y, str, color, size, life: 0.6, max: 0.6 });
   }
 
   /* ---------------- core loop ---------------- */
@@ -614,10 +548,7 @@ export class Game {
     this.parts.update(dt);
 
     if (this.state === "menu") {
-      this.cam.x += dt * 46;
-      this.world.ensure(this.cam.x + this.vw);
-      this.cam.y = lerp(this.cam.y, 30, 1 - Math.exp(-dt * 2));
-      this.updateShake(dt);
+      this.updateMenuDemo(dt);
       return;
     }
 
@@ -659,16 +590,7 @@ export class Game {
     if (p.trail.length > 22) p.trail.shift();
 
     // power-up timers
-    if (this.magnetT > 0) this.magnetT = Math.max(0, this.magnetT - dt);
-    if (this.invulnT > 0) this.invulnT -= dt;
     if (this.graceT > 0) this.graceT = Math.max(0, this.graceT - dt);
-    if (this.announceT > 0) {
-      this.announceT -= dt;
-      if (this.announceT <= 0) {
-        this.announce = null;
-        this.emit();
-      }
-    }
 
     // coin chain window
     if (this.coinChainT > 0) {
@@ -712,13 +634,42 @@ export class Game {
     const ms = Math.floor(this.distM / 100) * 100;
     if (ms > 0 && ms > this.lastMilestone) {
       this.lastMilestone = ms;
-      this.popup(p.x, p.y - 90, `${ms} M!`, "#ffd23f", 34);
+      this.popup(p.x, p.y - 90, `${ms} м`, "#ffb547", 26);
       this.sfx.milestone();
     }
 
     this.sfx.setWind(sp / MAXV);
     this.sfx.padLevel(sp / MAXV);
     this.emit();
+  }
+
+  /** menu backdrop: the spider idles on a web while the city drifts past */
+  private updateMenuDemo(dt: number) {
+    const p = this.player;
+    this.demoT += dt;
+    this.cam.x += dt * 60;
+    const ax = this.cam.x + this.vw * 0.5;
+    this.world.ensure(this.cam.x + this.vw + 600);
+    const ay = this.world.ceilY(ax) + 2;
+    const len = 230;
+    const th = 0.5 * Math.sin(this.demoT * 1.3);
+    const px0 = p.x;
+    const py0 = p.y;
+    p.attached = true;
+    p.ax = ax;
+    p.ay = ay;
+    p.rope = len;
+    p.rope0 = len;
+    p.x = ax + Math.sin(th) * len;
+    p.y = ay + Math.cos(th) * len;
+    const k = 1 / Math.max(dt, 1e-3);
+    p.vx = (p.x - px0) * k;
+    p.vy = (p.y - py0) * k;
+    p.trail.push({ x: p.x, y: p.y });
+    if (p.trail.length > 22) p.trail.shift();
+    this.attachTime = -10;
+    this.cam.y = lerp(this.cam.y, 40, 1 - Math.exp(-dt * 2));
+    this.updateShake(dt);
   }
 
   private step(h: number) {
@@ -829,7 +780,7 @@ export class Game {
       }
     }
 
-    // lava — deadly (unless shielded)
+    // lava — deadly
     if (p.y + p.r > w.lavaY(p.x) - 2) {
       this.die("lava");
       return;
@@ -900,13 +851,9 @@ export class Game {
         case "coin": {
           if (!o.got) {
             const d = dist(p.x, p.y, o.x, o.y);
-            const pullR = this.magnetT > 0 ? 215 : 70;
+            const pullR = 70;
             if (d < pullR) {
-              // magnet power-up sucks coins hard, base is a gentle pull
-              const f =
-                this.magnetT > 0
-                  ? 0.05
-                  : (1 - Math.exp(-0.45 * (70 - d) * 0.016)) * 0.12;
+              const f = (1 - Math.exp(-0.45 * (70 - d) * 0.016)) * 0.12;
               o.x = lerp(o.x, p.x, f);
               o.y = lerp(o.y, p.y, f);
             }
@@ -914,49 +861,6 @@ export class Game {
               o.got = true;
               this.onCoin(o.x, o.y);
             }
-          }
-          break;
-        }
-        case "boost": {
-          if (!o.used && dist(p.x, p.y, o.x, o.y) < o.r + p.r * 0.75) {
-            o.used = true;
-            this.boostNow(o.x, o.y);
-          }
-          break;
-        }
-        case "shield": {
-          if (!o.got && dist(p.x, p.y, o.x, o.y) < 34 + p.r) {
-            o.got = true;
-            this.shieldActive = true;
-            this.showAnnounce({
-              id: "shield" + Math.floor(this.time * 10),
-              kind: "shield",
-              title: "SHIELD UP",
-              sub: "absorbs one fatal hit",
-            });
-            this.popup(p.x, p.y - 56, "SHIELD ON", "#2fe0b0", 22);
-            this.parts.burst(o.x, o.y, "#2fe0b0", 12, 190, 2.6, 0.5, 240);
-            this.parts.ring(o.x, o.y, "rgba(47,224,176,0.9)", 5, 0.4);
-            this.sfx.shieldUp();
-            this.emit();
-          }
-          break;
-        }
-        case "magnet": {
-          if (!o.got && dist(p.x, p.y, o.x, o.y) < 34 + p.r) {
-            o.got = true;
-            this.magnetT = MAGNET_TIME;
-            this.showAnnounce({
-              id: "magnet" + Math.floor(this.time * 10),
-              kind: "magnet",
-              title: "MAGNET",
-              sub: `${MAGNET_TIME}s of coin vacuum`,
-            });
-            this.popup(p.x, p.y - 56, "MAGNET!", "#ff8ea1", 22);
-            this.parts.burst(o.x, o.y, "#ff6b81", 12, 190, 2.6, 0.5, 240);
-            this.parts.ring(o.x, o.y, "rgba(255,107,129,0.9)", 5, 0.4);
-            this.sfx.magnetUp();
-            this.emit();
           }
           break;
         }
@@ -972,59 +876,6 @@ export class Game {
     this.sfx.coin(this.coinChain);
     this.parts.burst(x, y, "#ffd23f", 10, 170, 2.6, 0.45, 320);
     this.parts.ring(x, y, "rgba(255,210,63,0.9)", 4, 0.35);
-    this.emit();
-  }
-
-  private boostNow(x: number, y: number) {
-    const p = this.player;
-    const sp = Math.max(p.speed(), 360);
-    const k = Math.min((sp + 320) / sp, 1.4);
-    p.vx = p.vx * k + 80;
-    p.vy = p.vy * k;
-    const s2 = p.speed();
-    if (s2 > MAXV * 1.12) {
-      const c = (MAXV * 1.12) / s2;
-      p.vx *= c;
-      p.vy *= c;
-    }
-    this.trauma = Math.min(0.55, this.trauma + 0.22);
-    this.showAnnounce({
-      id: "boost" + Math.floor(this.time * 10),
-      kind: "boost",
-      title: "BOOST!",
-      sub: "speed burst",
-    });
-    this.popup(p.x, p.y - 50, "BOOST!", "#ff8ea1", 20);
-    this.parts.burst(x, y, "#ff7d9c", 16, 320, 3, 0.5, 200);
-    this.parts.ring(x, y, "rgba(255,125,156,0.95)", 10, 0.5);
-    this.sfx.boost();
-  }
-
-  /** shield absorbs one lethal hit and bails you out */
-  private breakShield(cause: string) {
-    const p = this.player;
-    this.shieldActive = false;
-    this.invulnT = 1.15;
-    if (cause === "lava") {
-      p.vy = -880;
-      p.vx += 160;
-      // lift out of the lava plane so the bounce reads
-      p.y = this.world.lavaY(p.x) - p.r * 1.6;
-    } else {
-      p.vy = Math.min(p.vy, -620);
-      p.vx += 90;
-    }
-    this.trauma = Math.min(0.7, this.trauma + 0.45);
-    this.showAnnounce({
-      id: "save" + Math.floor(this.time * 10),
-      kind: "save",
-      title: "SAVED!",
-      sub: "shield absorbed the hit",
-    });
-    this.popup(p.x, p.y - 64, "SAVED!", "#2fe0b0", 28);
-    this.parts.burst(p.x, p.y, "#2fe0b0", 20, 340, 3, 0.6, 420);
-    this.parts.ring(p.x, p.y, "rgba(47,224,176,0.95)", 10, 0.6);
-    this.sfx.shieldBreak();
     this.emit();
   }
 
@@ -1050,16 +901,10 @@ export class Game {
       this.sfx.shieldUp();
       return;
     }
-    if (this.shieldActive && this.invulnT <= 0) {
-      this.breakShield(cause);
-      return;
-    }
     this.state = "dying";
     this.dyingT = 0;
     this.cause = cause;
     this.trauma = 1;
-    this.shieldActive = false;
-    this.magnetT = 0;
     this.perfectCombo = 0;
     const p = this.player;
     p.attached = false;
@@ -1069,6 +914,7 @@ export class Game {
     this.parts.ring(p.x, p.y, "rgba(255,255,255,0.9)", 8, 0.6);
     this.sfx.death();
     this.sfx.padStop();
+    this.haptic([30, 50, 60]);
     if (this.distM > this.best) {
       this.best = this.distM;
       this.newBest = true;
@@ -1077,7 +923,7 @@ export class Game {
     this.emit();
   }
 
-  /** contextual tutorial — teach each thing the first time it shows up */
+  /** three lessons in the whole game, each shown once, inside the scene */
   private updateTips(dt: number) {
     if (this.tip) {
       this.tipT -= dt;
@@ -1090,27 +936,10 @@ export class Game {
     this.tipScanT -= dt;
     if (this.tipScanT > 0) return;
     this.tipScanT = 0.2;
-
     const p = this.player;
-    // core lessons first
-    if (this.show("swing")) return;
-    if (this.gliding && this.show("glide")) return;
-    if (this.runT > 3.5 && this.show("street")) return;
-    if (p.attached && this.runT > 6 && this.show("pump")) return;
-
-    // then whatever hazard or pickup is coming up next
-    const lookahead = 760;
-    let found: string | null = null;
-    this.world.eachNear(p.x + 420, (o) => {
-      if (found) return;
-      const ox = o.x;
-      if (ox < p.x + 120 || ox > p.x + lookahead) return;
-      if (o.kind === "coin" && o.got) return;
-      if (o.kind === "boost" && o.used) return;
-      if ((o.kind === "shield" || o.kind === "magnet") && o.got) return;
-      if (!this.taught.has(o.kind) && TIPS[o.kind]) found = o.kind;
-    });
-    if (found) this.show(found);
+    if (this.runT < 1.5 && this.show("hold")) return;
+    if (this.runT > 2.5 && p.attached && this.show("release")) return;
+    if (this.lowAlt > 0.5 && this.show("street")) return;
   }
 
   private show(id: string): boolean {
@@ -1119,16 +948,12 @@ export class Game {
     if (!tip) return false;
     this.taught.add(id);
     try {
-      localStorage.setItem(
-        TAUGHT_KEY,
-        JSON.stringify(Array.from(this.taught)),
-      );
+      localStorage.setItem(TAUGHT_KEY, JSON.stringify(Array.from(this.taught)));
     } catch {
       /* ignore */
     }
     this.tip = tip;
-    this.tipT = tip.tone === "info" ? 5 : 4;
-    this.sfx.tick();
+    this.tipT = TIP_TIME;
     this.emit();
     return true;
   }
@@ -1157,40 +982,30 @@ export class Game {
     const key = [
       this.state,
       this.distM,
-      this.coins,
       this.best,
       this.newBest,
-      this.sfx.muted,
       Math.round(this.maxSpeed),
       this.cause,
-      this.state === "playing" && !this.firstClick,
-      this.shieldActive,
-      Math.ceil(this.magnetT),
+      this.perfectCombo,
       this.tip?.id ?? "",
-      Math.ceil(this.graceT),
-      this.gliding,
-      this.announce?.id ?? "",
       Math.round(this.lowAlt * 5),
+      this.settings.sound,
+      this.settings.music,
+      this.settings.haptics,
     ].join("|");
     if (key === this.lastKey) return;
     this.lastKey = key;
     this.cb({
       state: this.state,
       dist: this.distM,
-      coins: this.coins,
       best: this.best,
       newBest: this.newBest,
-      muted: this.sfx.muted,
       maxSpeed: this.maxSpeed,
       cause: this.cause,
-      showHint: this.state === "playing" && !this.firstClick,
-      shield: this.shieldActive,
-      magnetT: this.magnetT,
+      combo: this.perfectCombo,
       tip: this.tip,
-      graceT: this.graceT,
-      gliding: this.gliding,
-      announce: this.announce,
       lowAlt: this.lowAlt,
+      settings: this.settings,
     });
   }
 }

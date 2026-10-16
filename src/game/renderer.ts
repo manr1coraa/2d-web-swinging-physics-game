@@ -4,6 +4,7 @@ import { clamp, lerp, hash, noise1, wrap } from "./util";
 
 const CONCRETE = "#0b1024";
 const TRIM = "#49d8ff";
+const UI_FONT = 'ui-rounded, -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif';
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
@@ -33,11 +34,9 @@ export class Renderer {
     this.worldObjects(g);
     this.upperCity(g);
     g.parts.draw(ctx);
-    if (g.state !== "menu") {
-      this.trail(g);
-      this.rope(g);
-      if (g.state === "playing" || g.state === "paused") this.spider(g);
-    }
+    this.trail(g);
+    this.rope(g);
+    this.spider(g);
     this.popups(g);
     this.aimMark(g);
     this.snapMark(g);
@@ -733,95 +732,6 @@ export class Renderer {
         break;
       }
 
-      case "boost": {
-        if (o.used) break;
-        const pulse = 1 + Math.sin(t * 4.2 + o.x * 0.05) * 0.07;
-        const r0 = o.r * pulse;
-        ctx.globalAlpha = 0.14;
-        ctx.fillStyle = "#ff5e7a";
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, r0 + 12, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = "rgba(255,94,122,0.45)";
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, r0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.strokeStyle = "#ffd7de";
-        ctx.lineWidth = 2.4;
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, r0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.strokeStyle = "#ff5e7a";
-        ctx.lineWidth = 3.2;
-        ctx.lineCap = "round";
-        const wob2 = Math.sin(t * 6) * 1.6;
-        for (let k = 0; k < 3; k++) {
-          const cx = o.x - 9 + k * 9 + wob2;
-          ctx.beginPath();
-          ctx.moveTo(cx - 2.5, o.y - 5.5);
-          ctx.lineTo(cx + 3, o.y);
-          ctx.lineTo(cx - 2.5, o.y + 5.5);
-          ctx.stroke();
-        }
-        break;
-      }
-
-      case "shield":
-      case "magnet": {
-        if (o.got) break;
-        const isShield = o.kind === "shield";
-        const col = isShield ? "#2fe0b0" : "#ff6b81";
-        const oy = o.y + Math.sin(t * 2.2 + o.x * 0.04) * 5;
-        const orad = o.r * (1 + Math.sin(t * 3.6 + o.x) * 0.07);
-        ctx.globalAlpha = 0.16;
-        ctx.fillStyle = col;
-        ctx.beginPath();
-        ctx.arc(o.x, oy, orad + 11, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = "rgba(255,255,255,0.07)";
-        ctx.beginPath();
-        ctx.arc(o.x, oy, orad, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = col;
-        ctx.lineWidth = 2.4;
-        ctx.stroke();
-        ctx.strokeStyle = "rgba(255,255,255,0.35)";
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.arc(o.x - 2, oy - 2, orad * 0.62, Math.PI * 0.9, Math.PI * 1.6);
-        ctx.stroke();
-        if (isShield) {
-          ctx.fillStyle = col;
-          ctx.beginPath();
-          ctx.moveTo(o.x, oy - 7.5);
-          ctx.lineTo(o.x + 6, oy - 5);
-          ctx.lineTo(o.x + 6, oy + 1);
-          ctx.quadraticCurveTo(o.x + 6, oy + 7, o.x, oy + 10);
-          ctx.quadraticCurveTo(o.x - 6, oy + 7, o.x - 6, oy + 1);
-          ctx.lineTo(o.x - 6, oy - 5);
-          ctx.closePath();
-          ctx.fill();
-        } else {
-          ctx.strokeStyle = col;
-          ctx.lineCap = "butt";
-          ctx.lineWidth = 4.6;
-          ctx.beginPath();
-          ctx.arc(o.x, oy - 0.5, 5, Math.PI, Math.PI * 2);
-          ctx.stroke();
-          ctx.strokeStyle = "#eef3ff";
-          ctx.beginPath();
-          ctx.moveTo(o.x - 5, oy - 0.5);
-          ctx.lineTo(o.x - 5, oy + 6.5);
-          ctx.moveTo(o.x + 5, oy - 0.5);
-          ctx.lineTo(o.x + 5, oy + 6.5);
-          ctx.stroke();
-          ctx.lineCap = "round";
-        }
-        break;
-      }
     }
   }
 
@@ -899,44 +809,6 @@ export class Renderer {
     const ang = Math.atan2(p.vy, p.vx || 0.0001);
     const wob = Math.sin(g.time * 11 + sp * 0.01);
 
-    if (g.magnetT > 0) {
-      const mp = 30 + Math.sin(g.time * 6) * 4;
-      ctx.strokeStyle = `rgba(255,107,129,${(0.28 + 0.12 * Math.sin(g.time * 6)).toFixed(3)})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, mp, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    if (g.shieldActive) {
-      ctx.fillStyle = "rgba(47,224,176,0.10)";
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 26, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(47,224,176,0.7)";
-      ctx.lineWidth = 2.4;
-      ctx.stroke();
-      ctx.strokeStyle = "rgba(220,255,245,0.8)";
-      ctx.lineWidth = 2;
-      for (let k = 0; k < 2; k++) {
-        const a0 = g.time * 1.8 + k * Math.PI;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 26, a0, a0 + 0.7);
-        ctx.stroke();
-      }
-    }
-
-    // pumping flare — the spider actively works the web
-    if (p.attached && g.pumpFx > 0.02) {
-      ctx.globalAlpha = g.pumpFx * 0.5;
-      ctx.strokeStyle = "#7df0ff";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 21 + g.pumpFx * 6, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-
-    // start-of-run grace halo
     if (g.graceT > 0) {
       const gp = 0.3 + 0.25 * Math.sin(g.time * 7);
       ctx.strokeStyle = `rgba(125,240,255,${gp.toFixed(3)})`;
@@ -1050,7 +922,7 @@ export class Renderer {
       const pop = 1 + Math.max(0, tp.life / tp.max - 0.82) * 1.2;
       const size = tp.size * pop;
       ctx.globalAlpha = f;
-      ctx.font = `800 ${size}px "Baloo 2", sans-serif`;
+      ctx.font = `700 ${size}px ${UI_FONT}`;
       ctx.lineWidth = Math.max(3, size / 6);
       ctx.strokeStyle = "rgba(5,8,24,0.85)";
       ctx.strokeText(tp.str, tp.x, tp.y);
