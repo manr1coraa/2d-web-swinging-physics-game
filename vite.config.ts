@@ -11,8 +11,9 @@ const __dirname = path.dirname(__filename);
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss(), viteSingleFile()],
-  // dev server has to be reachable from the sandbox preview proxy
-  server: { host: true, allowedHosts: true, port: 5173 },
+  // dev server has to be reachable from the sandbox preview proxy;
+  // strictPort keeps the preview on 5173 instead of silently moving to 5174
+  server: { host: true, allowedHosts: true, port: 5173, strictPort: true },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
