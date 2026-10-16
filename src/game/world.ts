@@ -314,7 +314,7 @@ export class World {
     const prevHadWind =
       prev !== undefined && prev.objs.some((o) => o.kind === "wind");
     const wantWind =
-      !isGateChunk && !prevHadWind && i > 3 && r(80) < 0.32 + 0.1 * t;
+      !isGateChunk && !prevHadWind && i > 3 && r(80) < 0.2 + 0.06 * t;
     if (wantWind) {
       const wx = x0 + this.cw * 0.5 + (r(82) - 0.5) * 110;
       // the whole band has to sit in open air: under the roof, above the street
@@ -326,7 +326,7 @@ export class World {
       const hi = floor - 150 - hgt / 2;
       if (hi > lo) {
         const wy = clamp(lo + r(83) * (hi - lo), lo, hi);
-        const strength = 300 + r(87) * 260;
+        const strength = 220 + r(87) * 180;
         const ang = -Math.PI * (0.14 + r(86) * 0.3); // always forward and up
         objs.push({
           kind: "wind",

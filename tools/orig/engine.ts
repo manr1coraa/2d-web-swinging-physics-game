@@ -127,20 +127,20 @@ export interface Popup {
   max: number;
 }
 
-const G = 1930; // gravity px/s^2 — lighter, floatier arcs
-const FWD = 175; // forward push — ramps up with distance
-const FWD_ATT = 95; // gentle constant swing nudge
-const MAXV = 1300;
+const G = 1200; // gravity px/s^2 — lighter, floatier arcs
+const FWD = 100; // forward push — ramps up with distance
+const FWD_ATT = 75; // gentle constant swing nudge
+const MAXV = 850;
 const ROPE_MAX = 440; // must exceed the corridor height or low flight is a dead end
-const PUMP = 700; // tangential self-pump — keeps the swing alive
-const REEL = 90; // rope reel speed while pumping
+const PUMP = 420; // tangential self-pump — keeps the swing alive
+const REEL = 70; // rope reel speed while pumping
 const GLIDE_G = 0.28; // gravity multiplier while gliding
 const GLIDE_VY = 215; // sink rate when gliding slowly
 const GLIDE_CLIMB = -110; // fast glides actually gain altitude
-const GLIDE_FWD = 190; // forward drift from the web-wings
+const GLIDE_FWD = 110; // forward drift from the web-wings
 const UPDRAFT_H = 330; // height above the street where thermals kick in
-const UPDRAFT_VY = -330; // how hard the updraft lifts you clear
-const GRACE = 3.2; // seconds of invulnerability at the start of a run
+const UPDRAFT_VY = -280; // how hard the updraft lifts you clear
+const GRACE = 4.5; // seconds of invulnerability at the start of a run
 const METER = 50; // px per meter
 const MAGNET_TIME = 9;
 
@@ -695,7 +695,7 @@ export class Game {
     if (this.holdWeb && !p.attached) {
       this.autoRetryT -= dt;
       if (this.autoRetryT <= 0) {
-        this.autoRetryT = 0.075;
+        this.autoRetryT = 0.1;
         this.tryAutoAttach();
       }
     }
@@ -752,8 +752,8 @@ export class Game {
     }
     // pace quickens the further you go — gently
     const fwd = p.attached
-      ? FWD_ATT + Math.min(50, this.distM * 0.25)
-      : FWD + Math.min(120, this.distM * 0.65);
+      ? FWD_ATT + Math.min(40, this.distM * 0.2)
+      : FWD + Math.min(90, this.distM * 0.5);
     p.vx += fwd * h * (p.grounded ? 2.2 : 1);
     // gentle air drag
     p.vx *= Math.pow(0.5, h * (p.attached ? 0.045 : 0.13));

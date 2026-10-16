@@ -8,8 +8,6 @@ import {
   Trophy,
   Gauge,
   Pause,
-  ShieldCheck,
-  Magnet,
   Home,
   HelpCircle,
   AlertTriangle,
@@ -237,26 +235,15 @@ export default function GameScreen() {
               <Coins size={14} />
               {snap.coins}
             </div>
-            {snap.shield && (
-              <div className="font-display flex items-center gap-1.5 rounded-xl border border-[#40d6aa]/40 bg-[#12172c]/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8ff0d2]">
-                <ShieldCheck size={12} /> shield
-              </div>
-            )}
-            {snap.magnetT > 0 && (
-              <div className="font-display flex items-center gap-1.5 rounded-xl border border-[#e86082]/40 bg-[#12172c]/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#ff9db0]">
-                <Magnet size={12} /> {Math.ceil(snap.magnetT)}s
-              </div>
-            )}
             {snap.gliding && (
               <div className="font-display flex items-center gap-1.5 rounded-xl border border-[#5cc8ea]/40 bg-[#12172c]/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8fdcff]">
                 <Wind size={12} /> gliding
               </div>
             )}
-            {snap.graceT > 0 && snap.graceT < 3 && (
-              <div className="font-display flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#12172c]/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/45">
-                <Sparkles size={12} /> safe {Math.ceil(snap.graceT)}s
-              </div>
-            )}
+
+
+
+
           </div>
 
           {/* hazard warning — a soft edge glow, nothing more */}

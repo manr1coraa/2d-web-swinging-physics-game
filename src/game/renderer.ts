@@ -8,18 +8,41 @@ export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private haloGrad: CanvasGradient | null = null;
   private lampGrad: CanvasGradient | null = null;
+  private ropePts: { x: number; y: number; px: number; py: number }[] = [];
+  private ropeSegs = 22;
+
+  private mainCanvas: HTMLCanvasElement;
+  private mainCtx: CanvasRenderingContext2D;
+  private offscreen: HTMLCanvasElement;
+  private pixelScale = 2;
 
   constructor(public canvas: HTMLCanvasElement) {
     const c = canvas.getContext("2d");
     if (!c) throw new Error("2d context unavailable");
-    this.ctx = c;
+    this.mainCanvas = canvas;
+    this.mainCtx = c;
+    this.offscreen = document.createElement("canvas");
+    const oc = this.offscreen.getContext("2d");
+    if (!oc) throw new Error("2d context unavailable");
+    this.ctx = oc;
+    oc.imageSmoothingEnabled = false;
+    c.imageSmoothingEnabled = false;
   }
 
   render(g: Game) {
     const { ctx } = this;
     const w = g.vw;
     const h = g.vh;
-    ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
+    const ps = this.pixelScale;
+    const needW = Math.max(1, Math.round(w * g.dpr / ps));
+    const needH = Math.max(1, Math.round(h * g.dpr / ps));
+    if (this.offscreen.width !== needW || this.offscreen.height !== needH) {
+      this.offscreen.width = needW;
+      this.offscreen.height = needH;
+    }
+    ctx.setTransform(g.dpr / ps, 0, 0, g.dpr / ps, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = false;
 
     const T = themeDef(g.theme);
     this.sky(g, w, h, T);
@@ -49,6 +72,13 @@ export class Renderer {
     this.speedLines(g, T);
     this.dangerArrows(g);
     this.ambient(g, T);
+
+    // pixelated upscale to the real canvas
+    const mc = this.mainCtx;
+    mc.imageSmoothingEnabled = false;
+    mc.setTransform(1, 0, 0, 1, 0, 0);
+    mc.clearRect(0, 0, this.mainCanvas.width, this.mainCanvas.height);
+    mc.drawImage(this.offscreen, 0, 0, this.mainCanvas.width, this.mainCanvas.height);
   }
 
   /** red chevrons at the screen edge for hazards about to arrive */
@@ -82,7 +112,7 @@ export class Renderer {
       seen.push({ y: oy - g.cam.y, d: dx });
     });
     if (seen.length === 0) return;
-    const pulse = 0.45 + 0.35 * Math.sin(g.time * 8);
+    const pulse = 0.4 + 0.25 * Math.sin(g.time * 5);
     for (const s of seen.slice(0, 3)) {
       const y = clamp(s.y, 56, g.vh - 56);
       const x = g.vw - 30;
@@ -442,6 +472,31 @@ export class Renderer {
     ctx.closePath();
     ctx.fillStyle = T.ceiling;
     ctx.fill();
+    // pixel brick texture for a coherent indie look
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(xa, top);
+    ctx.lineTo(xa, edge(xa));
+    for (let x = xa + 14; x < xb; x += 14) ctx.lineTo(x, edge(x));
+    ctx.lineTo(xb, edge(xb));
+    ctx.lineTo(xb, top);
+    ctx.closePath();
+    ctx.clip();
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.lineWidth = 1;
+    for (let y = top; y < edge(xa); y += 12) {
+      ctx.beginPath();
+      ctx.moveTo(xa, y);
+      ctx.lineTo(xb, y);
+      ctx.stroke();
+    }
+    for (let x = xa; x < xb; x += 24) {
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, edge(x));
+      ctx.stroke();
+    }
+    ctx.restore();
 
     // canopy foliage / ice crystals / coral on the underside for organic themes
     if (T.deco === "kelp" || T.spike === "vine" || T.spike === "coral") {
@@ -1124,7 +1179,7 @@ export class Renderer {
         ctx.beginPath();
         ctx.arc(o.x, o.y + 14, o.w * 0.85, 0, Math.PI * 2);
         ctx.fill();
-        if (Math.random() < 0.2) {
+        if (Math.random() < 0.1) {
           g.parts.spawn({
             x: o.x + (Math.random() - 0.5) * o.w,
             y: o.y + 8,
@@ -1461,36 +1516,111 @@ export class Renderer {
   private rope(g: Game) {
     const { ctx } = this;
     const p = g.player;
-    if (!p.attached) return;
+    if (!p.attached) {
+      this.ropePts = [];
+      return;
+    }
     const e = clamp((g.time - g.attachTime) / 0.09, 0, 1);
     const ease = 1 - Math.pow(1 - e, 3);
     const ex = p.x + (p.ax - p.x) * ease;
     const ey = p.y + (p.ay - p.y) * ease;
-    const curLen = Math.hypot(p.ax - p.x, p.ay - p.y);
-    const sag = Math.max(0, p.rope - curLen) * 0.55 * ease + (1 - ease) * 3;
-    const mx = (p.x + ex) / 2;
-    const my = (p.y + ey) / 2 + sag;
-    const path = () => {
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.quadraticCurveTo(mx, my, ex, ey);
-    };
+    const ropeLen = Math.max(40, p.rope);
+    const N = this.ropeSegs;
+    const segLen = ropeLen / (N - 1);
+
+    // initialise the segmented web once per attach
+    if (this.ropePts.length !== N) {
+      this.ropePts = [];
+      for (let i = 0; i < N; i++) {
+        const t = i / (N - 1);
+        this.ropePts.push({
+          x: p.x + (ex - p.x) * t,
+          y: p.y + (ey - p.y) * t,
+          px: p.x + (ex - p.x) * t,
+          py: p.y + (ey - p.y) * t,
+        });
+      }
+    }
+
+    const pts = this.ropePts;
+    // pin ends
+    pts[0].x = p.x;
+    pts[0].y = p.y;
+    pts[N - 1].x = ex;
+    pts[N - 1].y = ey;
+
+    // Verlet integration: the web leads, the spider follows.
+    // Pull each point toward a forward-bent curve (">") so the line
+    // stretches ahead of the spider instead of sagging behind.
+    for (let i = 1; i < N - 1; i++) {
+      const pt = pts[i];
+      const vx = (pt.x - pt.px) * 0.92;
+      const vy = (pt.y - pt.py) * 0.92;
+      pt.px = pt.x;
+      pt.py = pt.y;
+      const t = i / (N - 1);
+      const bend = Math.sin(t * Math.PI) * 0.18;
+      const targetX = p.x + (ex - p.x) * (t + bend);
+      const targetY = p.y + (ey - p.y) * t;
+      pt.x += vx + (targetX - pt.x) * 0.14;
+      pt.y += vy + (targetY - pt.y) * 0.14;
+    }
+
+    // constraint relaxation: keep segment lengths, let the web sag & spring
+    for (let iter = 0; iter < 10; iter++) {
+      for (let i = 0; i < N - 1; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.0001;
+        const diff = (d - segLen) / d;
+        const ox = dx * diff * 0.5;
+        const oy = dy * diff * 0.5;
+        if (i > 0) {
+          a.x += ox;
+          a.y += oy;
+        }
+        if (i < N - 2) {
+          b.x -= ox;
+          b.y -= oy;
+        }
+      }
+      // re-pin ends after relaxation
+      pts[0].x = p.x;
+      pts[0].y = p.y;
+      pts[N - 1].x = ex;
+      pts[N - 1].y = ey;
+    }
+
+    // draw the segmented web (shadow + glow + core)
     ctx.lineCap = "round";
-    path();
+    ctx.lineJoin = "round";
+    // shadow
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < N; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.strokeStyle = "rgba(6,10,30,0.55)";
     ctx.lineWidth = 3.4;
     ctx.stroke();
+    // glow
     ctx.setLineDash([12, 18]);
     ctx.lineDashOffset = -g.time * 190;
-    path();
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < N; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.strokeStyle = "rgba(126,231,255,0.35)";
     ctx.lineWidth = 4.6;
     ctx.stroke();
     ctx.setLineDash([]);
-    path();
+    // core
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < N; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.strokeStyle = "rgba(242,254,255,0.95)";
     ctx.lineWidth = 1.7;
     ctx.stroke();
+
     if (e >= 1) {
       ctx.strokeStyle = "rgba(240,252,255,0.9)";
       ctx.lineWidth = 2;
@@ -1585,8 +1715,9 @@ export class Renderer {
     ctx.restore();
 
     ctx.save();
+    const flip = g.flipT > 0 ? (1 - g.flipT / 0.6) * Math.PI * 2 : 0;
     ctx.translate(p.x, p.y);
-    ctx.rotate(ang);
+    ctx.rotate(ang + flip);
     ctx.lineCap = "round";
 
     // web-wings while gliding — membranes between arm and leg
@@ -1743,8 +1874,8 @@ export class Renderer {
     const { ctx } = this;
     const p = g.player;
     const sp = p.speed();
-    if (sp < 620 || g.state !== "playing") return;
-    const n = Math.min(9, Math.floor((sp - 620) / 90) + 1);
+    if (sp < 700 || g.state !== "playing") return;
+    const n = Math.min(6, Math.floor((sp - 700) / 120) + 1);
     const ux = p.vx / sp;
     const uy = p.vy / sp;
     const sx = p.x - g.cam.x + g.cam.sx;
@@ -1832,7 +1963,7 @@ export class Renderer {
     const w = g.vw;
     const h = g.vh;
     const rise = T.ambient === "bubbles" || T.ambient === "embers" || T.ambient === "sparks";
-    const n = T.ambient === "snow" ? 46 : 32;
+    const n = T.ambient === "snow" ? 24 : 16;
     for (let i = 0; i < n; i++) {
       const r1 = hash(i * 4.13);
       const r2 = hash(i * 8.77 + 2.1);
