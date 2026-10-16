@@ -29,7 +29,7 @@ export class Sfx {
           .webkitAudioContext;
       this.ctx = new AC();
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.55;
+      this.master.gain.value = this.muted ? 0 : 0.4;
       this.master.connect(this.ctx.destination);
 
       const len = this.ctx.sampleRate * 1;
@@ -64,13 +64,13 @@ export class Sfx {
       /* ignore */
     }
     if (this.master && this.ctx)
-      this.master.gain.setValueAtTime(m ? 0 : 0.55, this.ctx.currentTime);
+      this.master.gain.setValueAtTime(m ? 0 : 0.4, this.ctx.currentTime);
   }
 
   setWind(level: number) {
     if (!this.ctx || !this.windGain || !this.windFilter) return;
     const t = this.ctx.currentTime;
-    const target = Math.min(0.16, Math.max(0, level - 0.25) * 0.22);
+    const target = Math.min(0.07, Math.max(0, level - 0.25) * 0.1);
     this.windGain.gain.setTargetAtTime(target, t, 0.15);
     this.windFilter.frequency.setTargetAtTime(240 + level * 700, t, 0.2);
   }
@@ -126,62 +126,62 @@ export class Sfx {
 
   /** web stick */
   thwip() {
-    this.tone(950 + Math.random() * 200, 180, 0.09, "square", 0.12);
-    this.noise(0.07, 0.09, 3800);
+    this.tone(820 + Math.random() * 120, 420, 0.12, "sine", 0.07);
+    this.noise(0.06, 0.035, 3000, "bandpass");
   }
 
   /** web release */
   whoosh() {
-    this.noise(0.16, 0.07, 900, "bandpass");
+    this.noise(0.2, 0.035, 700, "bandpass");
   }
 
   /** miss click */
   tick() {
-    this.tone(320, 240, 0.05, "triangle", 0.06);
+    this.tone(320, 260, 0.05, "sine", 0.04);
   }
 
   coin(chain: number) {
     const k = 1 + Math.min(chain, 10) * 0.07;
-    this.tone(740 * k, 740 * k, 0.07, "sine", 0.14);
-    this.tone(1180 * k, 1180 * k, 0.14, "sine", 0.11, 0.055);
+    this.tone(740 * k, 740 * k, 0.1, "sine", 0.08);
+    this.tone(1180 * k, 1180 * k, 0.18, "sine", 0.05, 0.06);
   }
 
   death() {
-    this.tone(200, 34, 0.55, "sawtooth", 0.22);
-    this.tone(90, 24, 0.7, "sine", 0.26);
-    this.noise(0.5, 0.22, 520, "lowpass");
+    this.tone(260, 70, 0.6, "sine", 0.14);
+    this.tone(130, 50, 0.8, "triangle", 0.1, 0.05);
+    this.noise(0.45, 0.07, 500, "lowpass");
   }
 
   best() {
     const n = [523, 659, 784, 1046];
-    n.forEach((f, i) => this.tone(f, f, 0.16, "triangle", 0.12, i * 0.09));
+    n.forEach((f, i) => this.tone(f, f, 0.2, "sine", 0.09, i * 0.09));
   }
 
   start() {
-    this.tone(392, 392, 0.1, "triangle", 0.12);
-    this.tone(587, 587, 0.14, "triangle", 0.12, 0.09);
+    this.tone(392, 392, 0.12, "sine", 0.08);
+    this.tone(587, 587, 0.16, "sine", 0.08, 0.09);
   }
 
   /** boost ring hit — rising sweep */
   boost() {
-    this.tone(280, 1150, 0.28, "sawtooth", 0.12);
-    this.tone(560, 1700, 0.34, "sine", 0.1, 0.03);
-    this.noise(0.26, 0.1, 1600, "bandpass");
+    this.tone(280, 1000, 0.3, "sine", 0.08);
+    this.tone(560, 1500, 0.34, "sine", 0.05, 0.03);
+    this.noise(0.26, 0.03, 1600, "bandpass");
   }
 
   shieldUp() {
-    this.tone(760, 760, 0.08, "sine", 0.12);
-    this.tone(1140, 1140, 0.18, "sine", 0.1, 0.06);
+    this.tone(760, 760, 0.1, "sine", 0.08);
+    this.tone(1140, 1140, 0.2, "sine", 0.06, 0.06);
   }
 
   shieldBreak() {
-    this.tone(420, 80, 0.32, "sawtooth", 0.16);
-    this.noise(0.3, 0.15, 900, "lowpass");
+    this.tone(420, 90, 0.35, "sine", 0.12);
+    this.noise(0.3, 0.05, 900, "lowpass");
   }
 
   magnetUp() {
-    this.tone(440, 880, 0.22, "triangle", 0.11);
-    this.tone(660, 1320, 0.22, "sine", 0.08, 0.05);
+    this.tone(440, 880, 0.22, "sine", 0.07);
+    this.tone(660, 1320, 0.22, "sine", 0.05, 0.05);
   }
 
   /** perfect release — pitch climbs with combo */
@@ -193,13 +193,13 @@ export class Sfx {
     const steps = [0, 2, 4, 7, 9, 12, 14, 16, 19];
     const semis = steps[Math.min(Math.max(n, 1), steps.length) - 1];
     const f = 523.25 * Math.pow(2, semis / 12); // C5 base
-    this.tone(f, f, 0.12, "triangle", 0.13);
-    this.tone(f * 2, f * 2, 0.22, "sine", 0.06, 0.04);
+    this.tone(f, f, 0.16, "sine", 0.1);
+    this.tone(f * 2, f * 2, 0.24, "sine", 0.03, 0.03);
   }
 
   milestone() {
-    this.tone(660, 660, 0.1, "triangle", 0.1);
-    this.tone(990, 990, 0.16, "triangle", 0.09, 0.08);
+    this.tone(660, 660, 0.12, "sine", 0.08);
+    this.tone(990, 990, 0.18, "sine", 0.07, 0.08);
   }
 
   /* ---- ambient pad ---- */
@@ -229,7 +229,7 @@ export class Sfx {
     f.frequency.value = 320;
     const g = c.createGain();
     g.gain.setValueAtTime(0, t);
-    g.gain.setTargetAtTime(0.045, t, 0.8);
+    g.gain.setTargetAtTime(0.025, t, 0.8);
     const o1 = c.createOscillator();
     o1.type = "triangle";
     o1.frequency.value = 110;
@@ -258,7 +258,7 @@ export class Sfx {
 
   padDuck(duck: boolean) {
     if (!this.ctx || !this.pad) return;
-    this.pad.g.gain.setTargetAtTime(duck ? 0.012 : 0.045, this.ctx.currentTime, 0.2);
+    this.pad.g.gain.setTargetAtTime(duck ? 0.008 : 0.025, this.ctx.currentTime, 0.2);
   }
 
   padLevel(v: number) {

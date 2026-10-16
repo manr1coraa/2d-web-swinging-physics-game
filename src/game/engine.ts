@@ -759,7 +759,7 @@ export class Game {
     const p = this.player;
     p.syncPrev();
     // ---- glide: the second tap of a double tap spreads the web-wings ----
-    // Gravity is weakened while it lasts; there is no lift and no updraft.
+    // Gravity is weakened and a wing lift (∝ v_x²) acts while it lasts.
     const glide =
       this.glideHold &&
       !p.attached &&
@@ -768,7 +768,14 @@ export class Game {
       this.state === "playing";
     if (glide && !this.gliding) this.popup(p.x, p.y - 40, "GLIDE", "#7df0ff", 16);
     this.gliding = glide;
-    p.vy += T.gravity * (glide ? T.glideGravity : 1) * h;
+    if (glide) {
+      // wing: gravity is reduced and lift grows with v_x²
+      // speed in screen widths per second, capped at 1
+      const sw = Math.min(1, p.vx / Math.max(this.vw, 360));
+      p.vy += T.gravity * (T.glideGravity - T.glideLift * sw * sw) * h;
+    } else {
+      p.vy += T.gravity * h;
+    }
 
     // soft ceiling: quadratic air drag, a = -k·|v|·v, k set so that the
     // free-fall terminal speed equals softMax

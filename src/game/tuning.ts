@@ -48,7 +48,14 @@ export const tuning = {
   /** max gap between two taps to count as a double tap, seconds */
   doubleTapS: 0.3,
   /** gravity multiplier while gliding */
-  glideGravity: 0.28,
+  glideGravity: 0.2,
+  /**
+   * Wing lift while gliding. Lift = gravity × glideLift × (v_x / screen width)²,
+   * capped at v_x = 1 screen/s. It grows with speed like a real wing, so there
+   * is no constant push. Gliding holds height at about 0.75 screen widths/s
+   * (glideGravity 0.2). Above that the glider rises slowly.
+   */
+  glideLift: 0.6,
   /** fuel: seconds of glide available after a full refill */
   glideFuel: 1.6,
   /** fuel regained per second while swinging or standing on a platform */
@@ -88,6 +95,7 @@ export const tuningRanges: [keyof typeof tuning, number, number, number, string]
   ["perfectSlowScale", 0.1, 1, 0.05, "slow-mo scale"],
   ["doubleTapS", 0.12, 0.6, 0.01, "double tap s"],
   ["glideGravity", 0, 1, 0.01, "glide gravity"],
+  ["glideLift", 0, 1.5, 0.01, "glide lift"],
   ["glideFuel", 0.2, 4, 0.05, "glide fuel s"],
   ["glideRefill", 0, 2, 0.05, "glide refill /s"],
   ["camFollow", 1, 20, 0.5, "camera follow"],
