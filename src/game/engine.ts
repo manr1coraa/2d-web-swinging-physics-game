@@ -1,9 +1,10 @@
-import { World, themeForLevel, gateX } from "./world";
+import { World, themeForLevel, gateX, ROUTE_START_X } from "./world";
 import type { ThemeId } from "./world";
-import { Player } from "./player";
+import { Player, WEB_SEGMENTS } from "./player";
 import { Particles } from "./particles";
 import { Sfx } from "./audio";
 import { Renderer } from "./renderer";
+import { themeDef } from "./themes";
 import { clamp, lerp, dist, noise1 } from "./util";
 
 export type GameState =
@@ -21,6 +22,7 @@ export interface Snap {
   theme: ThemeId;
   dist: number;
   coins: number;
+  tricks: number;
   best: number;
   newBest: boolean;
   muted: boolean;
@@ -51,116 +53,86 @@ export interface Tip {
 export const TIPS: Record<string, Tip> = {
   swing: {
     id: "swing",
-    title: "Hold to swing",
-    text: "Hold SPACE or press anywhere — the web picks a ledge by itself. Let go to fly.",
+    title: "Catch a line",
+    text: "Hold SPACE or touch the screen to catch a branch. Let go to keep the swing's momentum and drift onward.",
     tone: "info",
   },
   glide: {
     id: "glide",
-    title: "Glide mode",
-    text: "Hold GLIDE (or SHIFT) to spread web-wings. Fast glides climb, and updrafts above the street always carry you back up.",
+    title: "Open the web-wings",
+    text: "Hold GLIDE (or SHIFT) to soften your fall and shape a gentler arc.",
     tone: "good",
   },
   street: {
     id: "street",
-    title: "Mind the street",
-    text: "Hitting the avenue ends the run. Keep your arc above the traffic.",
-    tone: "danger",
+    title: "Follow the hillside",
+    text: "Stay above the cream ridge. There is no need to race; use the swing to find a comfortable rhythm.",
+    tone: "info",
   },
   pump: {
     id: "pump",
-    title: "You pump the web",
-    text: "While attached you actively work the line — the longer you hold, the more speed you build.",
+    title: "Feel the spring",
+    text: "The silk gives a little under load, then returns its spring. Let go while moving forward to carry that momentum onward.",
     tone: "good",
   },
   stal: {
     id: "stal",
-    title: "Construction girder",
-    text: "Steel beams with hazard stripes hang from above. Swing under or around them.",
-    tone: "danger",
+    title: "A little hanging stone",
+    text: "A few pointed branches or ice tips hang overhead. Keep a little space as you swing beneath them.",
+    tone: "info",
   },
   spire: {
     id: "spire",
-    title: "Skyscraper",
-    text: "Towers rise from the street. Crashing into one is fatal — web over the roof.",
-    tone: "danger",
-  },
-  saw: {
-    id: "saw",
-    title: "Patrol drone",
-    text: "Those rotors hurt. Time your arc so you pass well clear of the red eye.",
-    tone: "danger",
-  },
-  plat: {
-    id: "plat",
-    title: "Scaffold",
-    text: "Safe to land on and to web onto. Great for resetting a bad line.",
-    tone: "good",
+    title: "Mind the tall rocks",
+    text: "Occasional stone spires rise from the hillside. A small change in timing can carry you over one.",
+    tone: "info",
   },
   coin: {
     id: "coin",
-    title: "Coins",
-    text: "Strung along the ideal arc. Chain them for a rising combo jingle.",
+    title: "Seed-leaves",
+    text: "Gather the little seed-leaves along your route. They keep a simple record of what you found.",
     tone: "good",
   },
   release: {
     id: "release",
-    title: "Let go!",
-    text: "A held line only rocks you back and forth. Release at the top of the swing to launch forward — that is how you actually travel.",
+    title: "Let the swing go",
+    text: "When your path points forward, release the line. Your own momentum carries you—no sudden launch is added.",
     tone: "info",
-  },
-  boost: {
-    id: "boost",
-    title: "Boost ring",
-    text: "Fly through for a burst of speed. Great right before a long gap.",
-    tone: "good",
   },
   shield: {
     id: "shield",
-    title: "Shield bubble",
-    text: "Absorbs one fatal hit and throws you back into the air. One save per pickup.",
+    title: "A gentle safety net",
+    text: "This soft charm cushions one bump, giving you another chance to find your balance.",
     tone: "good",
   },
   wind: {
     id: "wind",
-    title: "Air current",
-    text: "Those swirling tunnels push you hard. Enter along the arrows to get flung forward — they are the fastest way across a gap.",
+    title: "A quiet breeze",
+    text: "A passing current can nudge you upward or forward. Let it help shape your next arc.",
     tone: "good",
-  },
-  fire: {
-    id: "fire",
-    title: "Burning rooftop",
-    text: "Roofs are on fire down here. Webbing through the flames is fatal — swing high or grab a pod instead.",
-    tone: "danger",
   },
   fish: {
     id: "fish",
-    title: "Reef fish",
-    text: "Big fish drift through the trench. Touching one hurts — keep your line above them.",
-    tone: "danger",
-  },
-  drone: {
-    id: "drone",
-    title: "Hunter drone",
-    text: "Drones patrol sideways with a red scanner eye. Pass behind them, never through.",
-    tone: "danger",
+    title: "Tidal visitors",
+    text: "Little fish drift through the cove as scenery; they are friendly and safe to pass.",
+    tone: "good",
   },
   pod: {
     id: "pod",
-    title: "Web pod",
-    text: "Floating pods are always webbable. If the next roof looks too far, ride from pod to pod.",
+    title: "A resting branch",
+    text: "These broad floating branches are safe to land on and make a comfortable place to catch another line.",
     tone: "good",
   },
   portal: {
     id: "portal",
-    title: "Level gate",
-    text: "Reach the glowing gate at 250 m to drop into the next level. Only a dead-centre hit counts!",
+    title: "Follow the waymark",
+    text: "Pass through the wooden arch in the air every 250 m to reach the next stretch. If you miss it, another appears farther along.",
     tone: "good",
   },
   magnet: {
     id: "magnet",
-    title: "Magnet",
-    text: "Pulls every nearby coin to you for nine seconds.",
+    title: "A seed-catching charm",
+    text: "Nearby seed-leaves drift toward you for a little while.",
     tone: "good",
   },
 };
@@ -168,7 +140,7 @@ export const TIPS: Record<string, Tip> = {
 /** full-screen transformation callout */
 export interface Announce {
   id: string;
-  kind: "shield" | "magnet" | "boost" | "glide" | "perfect" | "save" | "level";
+  kind: "shield" | "magnet" | "glide" | "perfect" | "save" | "level";
   title: string;
   sub: string;
 }
@@ -183,23 +155,29 @@ export interface Popup {
   max: number;
 }
 
-const G = 1930; // gravity px/s^2 — lighter, floatier arcs
-const FWD = 175; // forward push — ramps up with distance
-const FWD_ATT = 95; // gentle constant swing nudge
-const MAXV = 1300;
-const ROPE_MAX = 440; // must exceed the corridor height or low flight is a dead end
-const PUMP = 700; // tangential self-pump — keeps the swing alive
-const REEL = 90; // rope reel speed while pumping
-const GLIDE_G = 0.28; // gravity multiplier while gliding
-const GLIDE_VY = 215; // sink rate when gliding slowly
-const GLIDE_CLIMB = -110; // fast glides actually gain altitude
-const GLIDE_FWD = 190; // forward drift from the web-wings
-const UPDRAFT_H = 330; // height above the street where thermals kick in
-const UPDRAFT_VY = -330; // how hard the updraft lifts you clear
-const GRACE = 3.2; // seconds of invulnerability at the start of a run
-const METER = 50; // px per meter
+const G = 1200; // gravity px/s²: soft, readable arcs
+const FWD = 100; // gentle forward drift; distance is not a speed test
+const FWD_ATT = 58;
+const MAXV = 850;
+const ROPE_MAX = 420;
+const ROPE_K = 520; // spring stiffness (px/s² per px of extension)
+const ROPE_DAMP = 11; // radial damping, only while the line is being pulled taut
+const ROPE_MAX_TENSION = 6500;
+const ROPE_MAX_STRETCH = 1.16;
+const PUMP = 420; // active tangential pump while holding the line
+const REEL = 58; // slow, phase-aware web reeling
+const GLIDE_G = 0.34;
+const GLIDE_VY = 150;
+const GLIDE_CLIMB = -76;
+const GLIDE_FWD = 92;
+const UPDRAFT_H = 300;
+const UPDRAFT_VY = -190;
+const GRACE = 2.2;
+const METER = 50;
 export const LEVEL_METERS = 250;
-export const MAX_LEVELS = 40;
+export const MAX_LEVELS = Number.POSITIVE_INFINITY;
+const ROUTE_TRANSITION = 1.45;
+const WEB_SOLVER_PASSES = 6;
 const UNLOCK_KEY = "webby_unlocked";
 const MAGNET_TIME = 9;
 
@@ -216,7 +194,7 @@ export class Game {
   state: GameState = "menu";
   time = 0;
   runT = 0;
-  private startX = 90;
+  private startX = ROUTE_START_X;
 
   vw = 0;
   vh = 0;
@@ -257,9 +235,12 @@ export class Game {
   private tipScanT = 0;
 
   distM = 0;
+  private journeyMeters = 0;
   coins = 0;
+  tricks = 0;
   best = 0;
   newBest = false;
+  trickDir: -1 | 0 | 1 = 0;
   level = 0;
   unlocked = 0;
   theme: ThemeId = "city";
@@ -332,8 +313,12 @@ export class Game {
     this.texts = [];
     this.player.reset(this.startX, this.world.ceilY(this.startX) + 225);
     this.runT = 0;
-    this.distM = 0;
-    if (!keepCoins) this.coins = 0;
+    if (!keepCoins) {
+      this.journeyMeters = 0;
+      this.coins = 0;
+      this.tricks = 0;
+    }
+    this.distM = this.journeyMeters;
     this.newBest = false;
     this.maxSpeed = 0;
     this.cause = "";
@@ -344,8 +329,9 @@ export class Game {
     this.magnetT = 0;
     this.invulnT = 0;
     this.perfectCombo = 0;
-    this.lastMilestone = 0;
+    this.lastMilestone = Math.floor(this.journeyMeters / 100) * 100;
     this.holdWeb = false;
+    this.trickDir = 0;
     this.aim = null;
     this.snapFx = null;
     this.autoRetryT = 0;
@@ -354,7 +340,7 @@ export class Game {
     this.windGain = 0;
     this.glideAnnounced = false;
     this.missedGate = false;
-    this.segStartM = 0;
+    this.segStartM = this.journeyMeters;
     this.gliding = false;
     this.glideHold = false;
     this.announce = null;
@@ -375,21 +361,21 @@ export class Game {
     const ax = this.player.x + 135;
     this.player.attach(ax, this.world.ceilY(ax) + 2);
     if (this.level > 0) {
+      const newLandscape = themeForLevel(this.level) !== themeForLevel(this.level - 1);
       this.showAnnounce({
-        id: `level${this.level}-${Math.floor(this.time * 7)}`,
-        kind: "boost",
-        title: `LEVEL ${this.level + 1}`,
-        sub: this.theme.toUpperCase(),
+        id: `waymark${this.level}-${Math.floor(this.time * 7)}`,
+        kind: "level",
+        title: newLandscape ? "NEW LANDSCAPE" : "WAYMARK REACHED",
+        sub: themeDef(themeForLevel(this.level)).name,
       });
     }
     this.emit();
   }
 
   private advanceLevel() {
-    if (this.level + 1 >= MAX_LEVELS) {
-      this.toMenu();
-      return;
-    }
+    // A reached waymark starts another 250 m stretch. The route is unbounded;
+    // worlds change every five waymarks and the eight biomes then cycle.
+    this.journeyMeters = Math.max(this.journeyMeters, this.distM);
     this.level += 1;
     if (this.level > this.unlocked) {
       this.unlocked = this.level;
@@ -405,7 +391,7 @@ export class Game {
   toMenu() {
     if (this.state === "playing" || this.state === "dying" || this.state === "paused")
       this.state = "menu";
-    this.player.attached = false;
+    this.player.detach();
     this.sfx.setWind(0);
     this.sfx.padStop();
     this.emit();
@@ -430,6 +416,11 @@ export class Game {
   toggleMute() {
     this.sfx.setMuted(!this.sfx.muted);
     this.emit();
+  }
+
+  /** Hold a direction to tuck into a real, momentum-carrying somersault. */
+  setTrick(direction: -1 | 0 | 1) {
+    this.trickDir = direction;
   }
 
   /** explicit glide input — held from a button or a key */
@@ -540,6 +531,12 @@ export class Game {
     ) {
       e.preventDefault();
       if (this.state === "playing" && !e.repeat) this.setGlide(true);
+    } else if (e.code === "KeyA" || e.code === "ArrowLeft") {
+      e.preventDefault();
+      if (this.state === "playing") this.setTrick(-1);
+    } else if (e.code === "KeyD" || e.code === "ArrowRight") {
+      e.preventDefault();
+      if (this.state === "playing") this.setTrick(1);
     } else if (e.code === "Escape") {
       if (this.state === "playing") this.pause();
       else if (this.state === "paused") this.resume();
@@ -557,6 +554,10 @@ export class Game {
       e.code === "ArrowDown"
     ) {
       this.setGlide(false);
+    } else if (
+      e.code === "KeyA" || e.code === "ArrowLeft" || e.code === "KeyD" || e.code === "ArrowRight"
+    ) {
+      this.setTrick(0);
     }
   };
 
@@ -569,25 +570,24 @@ export class Game {
     // rope angle from straight-down (0 = hanging below anchor)
     const ang = (Math.atan2(p.x - p.ax, p.y - p.ay) * 180) / Math.PI;
     const sp = p.speed();
-    const perfect = p.vx > 260 && ang > 14 && ang < 68 && sp > 540;
+    const perfect = p.vx > 150 && ang > 12 && ang < 72 && sp > 250;
     this.snapFx = { px: p.x, py: p.y, ax: p.ax, ay: p.ay, t: 0.26 };
     p.detach();
     this.sfx.whoosh();
-    this.parts.burst(p.x, p.y, "rgba(235,250,255,1)", 6, 130, 2.4, 0.4, 300);
+    this.parts.burst(p.x, p.y, "rgba(244,239,220,0.92)", 6, 130, 2.4, 0.4, 300);
     if (perfect) {
-      p.vx *= 1.045;
-      p.vy *= 1.045;
+      // Timing is rewarded as flow feedback, not an unexplained velocity boost.
       this.perfectCombo = Math.min(9, this.perfectCombo + 1);
       if (this.perfectCombo === 1 || this.perfectCombo % 3 === 0) {
         this.popup(
           p.x,
           p.y - 48,
           this.perfectCombo > 1 ? `PERFECT ×${this.perfectCombo}` : "PERFECT",
-          "#7df0ff",
+          "#91a680",
           18,
         );
       }
-      this.parts.ring(p.x, p.y, "rgba(125,240,255,0.9)", 8, 0.45);
+      this.parts.ring(p.x, p.y, "rgba(145,166,128,0.72)", 8, 0.45);
       this.sfx.perfect(this.perfectCombo);
       if (this.perfectCombo === 4 || this.perfectCombo === 7)
         this.showAnnounce({
@@ -635,8 +635,12 @@ export class Game {
         const sx = p.x + ((ax + d) - p.x) * (k / 6);
         lowestSky = Math.min(lowestSky, w.lavaY(sx));
       }
-      const dip = ay + d + 70 + p.r + 12 - lowestSky;
-      if (dip > 0) score += 500 + dip; // the deeper the dip, the worse
+      const dip = ay + d * ROPE_MAX_STRETCH + 48 + p.r + 10 - lowestSky;
+      // Prefer a web whose full elastic swing still clears the hillside. The
+      // desperate scan tolerates a small brush of the safety margin, never a
+      // line that would predictably pull the player into the ground.
+      if (dip > (desperate ? 36 : 12)) return;
+      if (dip > 0) score += 260 + dip;
       // line of sight — the surface must actually block the ray there
       const hit = w.raycast(p.x, p.y, dx / d, dy / d, d + 12);
       if (!hit || dist(hit.x, hit.y, ax, ay) > 18) return;
@@ -695,12 +699,10 @@ export class Game {
     const cand = this.findBestAnchor() ?? this.findBestAnchor(true);
     if (!cand) return false;
     p.attach(cand.x, cand.y);
-    p.vx *= 1.02;
-    p.vy *= 1.02;
     this.attachTime = this.time;
     this.firstClick = true;
-    this.parts.burst(cand.x, cand.y, "rgba(126,240,255,1)", 9, 150, 2.4, 0.35, 150);
-    this.parts.ring(cand.x, cand.y, "rgba(126,240,255,0.9)", 3, 0.3);
+    this.parts.burst(cand.x, cand.y, "rgba(232,220,187,0.92)", 9, 150, 2.4, 0.35, 150);
+    this.parts.ring(cand.x, cand.y, "rgba(202,191,157,0.72)", 3, 0.3);
     this.sfx.thwip();
     this.emit();
     return true;
@@ -751,7 +753,7 @@ export class Game {
         vx: (Math.random() - 0.5) * 30,
         life: 1.5,
         size: 5 + Math.random() * 9,
-        color: "rgba(214,206,255,0.5)",
+        color: "rgba(225,212,176,0.38)",
         grav: -40,
         drag: 0.03,
       });
@@ -786,33 +788,30 @@ export class Game {
 
     if (this.state === "levelup") {
       this.levelT += dt;
-      // the spider is being sucked into the gate — spiral him in
+      // Reaching a waymark pauses the trail where the spider crossed it. The
+      // marker never pulls the player in; a few drifting leaves mark the rest.
       const p2 = this.player;
-      p2.x = lerp(p2.x, this.gateHole?.x ?? p2.x, 1 - Math.exp(-dt * 3.2));
-      p2.y = lerp(p2.y, (this.gateHole?.y ?? p2.y) + 60, 1 - Math.exp(-dt * 3.2));
-      p2.vx *= Math.pow(0.5, dt * 3);
-      p2.vy *= Math.pow(0.5, dt * 3);
       p2.trail.push({ x: p2.x, y: p2.y });
       if (p2.trail.length > 22) p2.trail.shift();
-      if (Math.random() < dt * 34) {
+      if (Math.random() < dt * 18) {
         const a = Math.random() * Math.PI * 2;
-        const rr = 40 + Math.random() * 60;
+        const rr = 18 + Math.random() * 38;
         this.parts.spawn({
-          x: (this.gateHole?.x ?? p2.x) + Math.cos(a) * rr,
-          y: (this.gateHole?.y ?? p2.y) - 40 + Math.sin(a) * rr * 0.6,
-          vx: -Math.cos(a) * 130,
-          vy: -Math.sin(a) * 90 - 40,
-          life: 0.6 + Math.random() * 0.5,
-          size: 2 + Math.random() * 4,
-          color: this.theme === "underwater" ? "rgba(140,240,255,0.85)" : "rgba(255,226,150,0.9)",
-          grav: -60,
+          x: p2.x + Math.cos(a) * rr,
+          y: p2.y + Math.sin(a) * rr,
+          vx: Math.cos(a) * 22,
+          vy: -18 - Math.random() * 24,
+          life: 0.7 + Math.random() * 0.45,
+          size: 2 + Math.random() * 3,
+          color: "rgba(225,212,176,0.5)",
+          grav: -14,
         });
       }
       this.parts.update(dt);
       this.trauma = Math.max(0, this.trauma - dt * 0.6);
       this.updateShake(dt);
       this.sfx.setWind(0);
-      if (this.levelT > 2.5) {
+      if (this.levelT > ROUTE_TRANSITION) {
         this.state = "playing"; // guard so advanceLevel can restart cleanly
         this.advanceLevel();
       } else {
@@ -871,31 +870,14 @@ export class Game {
     this.updateShake(dt);
     this.world.ensure(p.x + this.vw);
 
-    // ---- the gate pulls: a near miss still gets sucked into the hole ----
+    // Waymarks are gentle goals, not magnets: the player has to steer through
+    // the arch. Missing one simply sets the next marker 250 m farther on.
     const gh = this.gateHole;
-    if (gh && this.state === "playing") {
-      const dx = p.x - gh.x;
-      const dy = p.y - (gh.y - 18);
-      const dd = Math.hypot(dx, dy);
-      if (dd < 320 && dd > 1 && p.x < gh.x + 60) {
-        const pull = Math.pow(1 - dd / 320, 2) * 1250;
-        p.vx -= (dx / dd) * pull * dt;
-        p.vy -= (dy / dd) * pull * dt;
-      }
-      // sailed clean past it — the next gate is 250 m further on
-      if (p.x > gh.x + 240 && !this.missedGate) {
-        this.missedGate = true;
-        this.segStartM = this.distM;
-        this.refreshGate();
-        this.showAnnounce({
-          id: "missed" + this.gateIndex,
-          kind: "save",
-          title: "GATE MISSED",
-          sub: "next one is 250 m ahead",
-        });
-        this.popup(p.x, p.y - 70, "MISSED!", "#ff8ea1", 26);
-        this.sfx.shieldBreak();
-      }
+    if (gh && this.state === "playing" && p.x > gh.x + 180 && !this.missedGate) {
+      this.missedGate = true;
+      this.segStartM = this.journeyMeters + Math.max(0, Math.floor((p.x - this.startX) / METER));
+      this.refreshGate();
+      this.popup(p.x, p.y - 54, "NEXT WAYMARK AHEAD", "#8d9d70", 16);
     }
 
     this.updateTips(dt);
@@ -920,13 +902,13 @@ export class Game {
     const alt = this.world.lavaY(p.x) - p.y;
     this.lowAlt = clamp(1 - alt / 300, 0, 1);
 
-    // score + milestones
-    const m = Math.max(0, Math.floor((p.x - this.startX) / METER));
+    // The journey keeps its total distance across each 250 m waymark.
+    const m = this.journeyMeters + Math.max(0, Math.floor((p.x - this.startX) / METER));
     if (m !== this.distM) this.distM = m;
     const ms = Math.floor(this.distM / 100) * 100;
     if (ms > 0 && ms > this.lastMilestone) {
       this.lastMilestone = ms;
-      this.popup(p.x, p.y - 90, `${ms} M`, "#e8b64a", 26);
+      this.popup(p.x, p.y - 70, `${ms} m`, "#b89158", 20);
       this.sfx.milestone();
     }
 
@@ -943,7 +925,7 @@ export class Game {
     const glide =
       !p.attached &&
       !p.grounded &&
-      (this.glideHold || this.holdWeb) &&
+      this.glideHold &&
       p.vy > -80 &&
       this.state === "playing";
     this.gliding = glide;
@@ -975,9 +957,7 @@ export class Game {
     }
 
     // pace quickens the further you go — gently
-    const fwd = p.attached
-      ? FWD_ATT + Math.min(50, this.distM * 0.25)
-      : FWD + Math.min(120, this.distM * 0.65);
+    const fwd = p.attached ? FWD_ATT : FWD;
     p.vx += fwd * h * (p.grounded ? 2.2 : 1);
     // gentle air drag
     p.vx *= Math.pow(0.5, h * (p.attached ? 0.045 : 0.13));
@@ -994,51 +974,183 @@ export class Game {
     p.x += p.vx * h;
     p.y += p.vy * h;
 
-    // rope constraint — rigid pendulum
+    // A web is a one-way damped spring: it can sag, stretch, and return a little
+    // energy, but it can never push the spider away from its anchor.
+    if (p.attached) this.applyWebTension(h);
+
+    // Intentional pumping is a small tangential force, with a gentle reel on
+    // the upswing. The web—not an automatic speed multiplier—does the work.
     if (p.attached) {
       const rx = p.x - p.ax;
       const ry = p.y - p.ay;
       const d = Math.hypot(rx, ry) || 0.0001;
-      if (d > p.rope) {
-        const nx = rx / d;
-        const ny = ry / d;
-        p.x = p.ax + nx * p.rope;
-        p.y = p.ay + ny * p.rope;
-        const vr = p.vx * nx + p.vy * ny;
-        if (vr > 0) {
-          p.vx -= vr * nx;
-          p.vy -= vr * ny;
-        }
-      }
-    }
-    // ---- active swing pumping (independent of gravity) ----
-    // The spider works the line himself: he drives the swing along its
-    // tangent and reels in on the way up / pays out on the way down.
-    if (p.attached) {
-      const rx2 = p.x - p.ax;
-      const ry2 = p.y - p.ay;
-      const d2 = Math.hypot(rx2, ry2) || 0.0001;
-      const tx = -ry2 / d2;
-      const ty = rx2 / d2;
-      const vt = p.vx * tx + p.vy * ty; // tangential speed (signed)
+      const tx = -ry / d;
+      const ty = rx / d;
+      const vt = p.vx * tx + p.vy * ty;
       const dir = vt >= 0 ? 1 : -1;
-      const spd = p.speed();
-      // strongest when slow — this is what stops you from stalling out
-      const k = clamp(1 - spd / 1050, 0.1, 1);
-      p.vx += tx * dir * PUMP * k * h;
-      p.vy += ty * dir * PUMP * k * h;
-      this.pumpFx = clamp(k * (this.holdWeb ? 1 : 0.6), 0, 1);
+      const speedFactor = clamp(1 - p.speed() / 820, 0.12, 1);
+      const inputFactor = this.holdWeb ? 1 : 0.28;
+      p.vx += tx * dir * PUMP * speedFactor * inputFactor * h;
+      p.vy += ty * dir * PUMP * speedFactor * inputFactor * h;
+      this.pumpFx = clamp(speedFactor * inputFactor, 0, 1);
 
-      // classic pendulum pumping: shorten going up, lengthen going down
       const rising = p.vy < 0;
-      const minRope = Math.max(70, p.rope0 - 85);
-      const maxRope = p.rope0 + (this.holdWeb ? 70 : 20);
-      p.rope = clamp(p.rope + (rising ? -REEL : REEL * 0.8) * h, minRope, maxRope);
+      const minRope = Math.max(76, p.rope0 - 64);
+      const maxRope = p.rope0 + (this.holdWeb ? 48 : 20);
+      const reelFactor = this.holdWeb ? 1 : 0.35;
+      p.rope = clamp(
+        p.rope + (rising ? -REEL : REEL * 0.72) * h * reelFactor,
+        minRope,
+        maxRope,
+      );
     } else {
       this.pumpFx = 0;
     }
-    if (p.grounded && p.vx < 200) p.vx = Math.max(p.vx, p.vx + 900 * h);
+
+    const postSwingSpeed = p.speed();
+    if (postSwingSpeed > MAXV) {
+      const scale = MAXV / postSwingSpeed;
+      p.vx *= scale;
+      p.vy *= scale;
+    }
+    if (p.grounded && p.vx < 180) p.vx = Math.max(p.vx, p.vx + 220 * h);
     this.collide();
+    this.stepRotation(h);
+    if (p.attached && this.state === "playing") this.updateWebChain(h);
+  }
+
+  private applyWebTension(h: number) {
+    const p = this.player;
+    const dx = p.x - p.ax;
+    const dy = p.y - p.ay;
+    const length = Math.hypot(dx, dy) || 0.0001;
+    const nx = dx / length;
+    const ny = dy / length;
+    const stretch = length - p.rope;
+
+    if (stretch > 0) {
+      const radialSpeed = p.vx * nx + p.vy * ny;
+      const tension = clamp(
+        ROPE_K * stretch + ROPE_DAMP * Math.max(0, radialSpeed),
+        0,
+        ROPE_MAX_TENSION,
+      );
+      p.vx -= nx * tension * h;
+      p.vy -= ny * tension * h;
+    }
+
+    // A soft line has a hard safety limit beyond its elastic travel. The
+    // correction only removes outward motion; tangential momentum is kept.
+    const maxLength = p.rope * ROPE_MAX_STRETCH;
+    if (length > maxLength) {
+      p.x = p.ax + nx * maxLength;
+      p.y = p.ay + ny * maxLength;
+      const outward = p.vx * nx + p.vy * ny;
+      if (outward > 0) {
+        p.vx -= nx * outward * 0.78;
+        p.vy -= ny * outward * 0.78;
+      }
+    }
+  }
+
+  /** Verlet integration plus distance constraints for the visible silk strand. */
+  private updateWebChain(h: number) {
+    const p = this.player;
+    const nodes = p.webNodes;
+    if (nodes.length !== WEB_SEGMENTS + 1) return;
+    const last = WEB_SEGMENTS;
+
+    nodes[0].x = nodes[0].px = p.ax;
+    nodes[0].y = nodes[0].py = p.ay;
+    nodes[last].x = nodes[last].px = p.x;
+    nodes[last].y = nodes[last].py = p.y;
+
+    for (let i = 1; i < last; i++) {
+      const node = nodes[i];
+      const vx = (node.x - node.px) * 0.994;
+      const vy = (node.y - node.py) * 0.994;
+      node.px = node.x;
+      node.py = node.y;
+      node.x += vx;
+      node.y += vy + G * 0.12 * h * h;
+    }
+
+    // If the player is temporarily stretching the spring, the strand follows
+    // that stretch instead of snapping into a straight, impossible chord.
+    const chord = Math.hypot(p.x - p.ax, p.y - p.ay);
+    const segmentLength = Math.max(p.rope, chord) / last;
+    for (let pass = 0; pass < WEB_SOLVER_PASSES; pass++) {
+      nodes[0].x = p.ax;
+      nodes[0].y = p.ay;
+      nodes[last].x = p.x;
+      nodes[last].y = p.y;
+      for (let i = 0; i < last; i++) {
+        const a = nodes[i];
+        const b = nodes[i + 1];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.0001;
+        const correction = (d - segmentLength) / d;
+        if (i === 0) {
+          b.x -= dx * correction;
+          b.y -= dy * correction;
+        } else if (i === last - 1) {
+          a.x += dx * correction;
+          a.y += dy * correction;
+        } else {
+          const cx = dx * correction * 0.5;
+          const cy = dy * correction * 0.5;
+          a.x += cx;
+          a.y += cy;
+          b.x -= cx;
+          b.y -= cy;
+        }
+      }
+    }
+
+    nodes[0].x = nodes[0].px = p.ax;
+    nodes[0].y = nodes[0].py = p.ay;
+    nodes[last].x = nodes[last].px = p.x;
+    nodes[last].y = nodes[last].py = p.y;
+  }
+
+  private stepRotation(h: number) {
+    const p = this.player;
+    const target = Math.atan2(p.vy, p.vx || 0.0001);
+    const error = Math.atan2(Math.sin(target - p.rotation), Math.cos(target - p.rotation));
+
+    if (p.attached) {
+      // While webbed, the body follows the swing tangent with a small inertial lag.
+      p.angularVelocity += error * 18 * h;
+      p.angularVelocity *= Math.exp(-7 * h);
+      p.rotation += p.angularVelocity * h;
+      p.lastFlipAngle = p.rotation;
+      p.flips = 0;
+      return;
+    }
+
+    if (this.trickDir !== 0 && !p.grounded) {
+      p.angularVelocity += this.trickDir * 6.5 * h;
+    } else if (Math.abs(p.angularVelocity) < 1.25 && !p.grounded) {
+      // At low spin the body settles back into the direction of travel.
+      p.angularVelocity += clamp(error * 2.8, -2.2, 2.2) * h;
+    }
+
+    p.angularVelocity *= Math.exp(-(this.trickDir !== 0 ? 0.2 : p.grounded ? 5 : 0.42) * h);
+    p.angularVelocity = clamp(p.angularVelocity, -8, 8);
+    p.rotation += p.angularVelocity * h;
+
+    const turns = Math.trunc((p.rotation - p.lastFlipAngle) / (Math.PI * 2));
+    if (turns !== 0) {
+      const count = Math.abs(turns);
+      p.lastFlipAngle += turns * Math.PI * 2;
+      p.flips += count;
+      this.tricks += count;
+      this.popup(p.x, p.y - 48, count > 1 ? `×${count} SOMERSAULTS` : "SOMERSAULT", "#a7805e", 17);
+      this.parts.ring(p.x, p.y, "rgba(190,148,106,0.52)", 5, 0.38);
+      this.sfx.coin(Math.min(count, 4));
+      this.emit();
+    }
   }
 
   private collide() {
@@ -1056,9 +1168,15 @@ export class Game {
       }
     }
 
-    // floor gate — the hole at 250 m swallows you into the next level
+    // Cross through the visible opening of the wooden arch; its broad frame is
+    // forgiving, but simply passing beside it does not advance the journey.
     const gate = this.gateHole;
-    if (gate && Math.abs(p.x - gate.x) < gate.r && p.y + p.r > gate.y - 44) {
+    const withinArch =
+      gate !== null &&
+      Math.abs(p.x - gate.x) < gate.r * 0.72 + p.r * 0.35 &&
+      p.y > gate.y - gate.r * 0.78 - p.r * 0.2 &&
+      p.y < gate.y + gate.r * 0.82 + p.r * 0.2;
+    if (gate && withinArch) {
       this.reachPortal(gate.x, gate.y);
       return;
     }
@@ -1151,13 +1269,6 @@ export class Game {
           }
           break;
         }
-        case "boost": {
-          if (!o.used && dist(p.x, p.y, o.x, o.y) < o.r + p.r * 0.75) {
-            o.used = true;
-            this.boostNow(o.x, o.y);
-          }
-          break;
-        }
         case "fire": {
           const hw = o.w / 2;
           if (
@@ -1168,25 +1279,10 @@ export class Game {
             death = "fire";
           break;
         }
-        case "fish": {
-          const fy = o.y + Math.sin(this.time * 1.1 + o.ph) * o.bob;
-          const fx = o.x + Math.sin(this.time * 0.55 + o.ph) * 60;
-          if (dist(p.x, p.y, fx, fy) < o.r + p.r - 4) death = "fish";
+        case "fish":
+        case "drone":
+          // Wildlife is scenery, not a collision hazard.
           break;
-        }
-        case "drone": {
-          const dx = o.x + Math.sin(this.time * 0.7 + o.ph) * 78;
-          const dy = o.y + Math.sin(this.time * 1.4 + o.ph) * o.bob;
-          if (dist(p.x, p.y, dx, dy) < o.r + p.r - 5) death = "drone";
-          break;
-        }
-        case "portal": {
-          if (dist(p.x, p.y, o.x, o.y + 6) < o.r + p.r + 14 && !o.used) {
-            o.used = true;
-            this.reachPortal(o.x, o.y);
-          }
-          break;
-        }
         case "shield": {
           if (!o.got && dist(p.x, p.y, o.x, o.y) < 34 + p.r) {
             o.got = true;
@@ -1197,9 +1293,9 @@ export class Game {
               title: "SHIELD UP",
               sub: "absorbs one fatal hit",
             });
-            this.popup(p.x, p.y - 56, "SHIELD ON", "#2fe0b0", 22);
-            this.parts.burst(o.x, o.y, "#2fe0b0", 12, 190, 2.6, 0.5, 240);
-            this.parts.ring(o.x, o.y, "rgba(47,224,176,0.9)", 5, 0.4);
+            this.popup(p.x, p.y - 56, "SHIELD ON", "#89a47b", 22);
+            this.parts.burst(o.x, o.y, "#89a47b", 12, 190, 2.6, 0.5, 240);
+            this.parts.ring(o.x, o.y, "rgba(137,164,123,0.72)", 5, 0.4);
             this.sfx.shieldUp();
             this.emit();
           }
@@ -1215,9 +1311,9 @@ export class Game {
               title: "MAGNET",
               sub: `${MAGNET_TIME}s of coin vacuum`,
             });
-            this.popup(p.x, p.y - 56, "MAGNET!", "#ff8ea1", 22);
-            this.parts.burst(o.x, o.y, "#ff6b81", 12, 190, 2.6, 0.5, 240);
-            this.parts.ring(o.x, o.y, "rgba(255,107,129,0.9)", 5, 0.4);
+            this.popup(p.x, p.y - 56, "MAGNET!", "#b87e67", 22);
+            this.parts.burst(o.x, o.y, "#bd8066", 12, 190, 2.6, 0.5, 240);
+            this.parts.ring(o.x, o.y, "rgba(189,128,102,0.68)", 5, 0.4);
             this.sfx.magnetUp();
             this.emit();
           }
@@ -1233,28 +1329,9 @@ export class Game {
     this.coinChain += 1;
     this.coinChainT = 1.4;
     this.sfx.coin(this.coinChain);
-    this.parts.burst(x, y, "#ffd23f", 10, 170, 2.6, 0.45, 320);
-    this.parts.ring(x, y, "rgba(255,210,63,0.9)", 4, 0.35);
+    this.parts.burst(x, y, "#d1ac69", 10, 170, 2.6, 0.45, 320);
+    this.parts.ring(x, y, "rgba(209,172,105,0.72)", 4, 0.35);
     this.emit();
-  }
-
-  private boostNow(x: number, y: number) {
-    const p = this.player;
-    const sp = Math.max(p.speed(), 360);
-    const k = Math.min((sp + 320) / sp, 1.4);
-    p.vx = p.vx * k + 80;
-    p.vy = p.vy * k;
-    const s2 = p.speed();
-    if (s2 > MAXV * 1.12) {
-      const c = (MAXV * 1.12) / s2;
-      p.vx *= c;
-      p.vy *= c;
-    }
-    this.trauma = Math.min(0.4, this.trauma + 0.16);
-    this.popup(p.x, p.y - 50, "BOOST", "#e8b64a", 18);
-    this.parts.burst(x, y, "#ff7d9c", 16, 320, 3, 0.5, 200);
-    this.parts.ring(x, y, "rgba(255,125,156,0.95)", 10, 0.5);
-    this.sfx.boost();
   }
 
   /** shield absorbs one lethal hit and bails you out */
@@ -1278,9 +1355,9 @@ export class Game {
       title: "SAVED!",
       sub: "shield absorbed the hit",
     });
-    this.popup(p.x, p.y - 64, "SAVED!", "#2fe0b0", 28);
-    this.parts.burst(p.x, p.y, "#2fe0b0", 20, 340, 3, 0.6, 420);
-    this.parts.ring(p.x, p.y, "rgba(47,224,176,0.95)", 10, 0.6);
+    this.popup(p.x, p.y - 64, "SAVED!", "#89a47b", 28);
+    this.parts.burst(p.x, p.y, "#89a47b", 20, 340, 3, 0.6, 420);
+    this.parts.ring(p.x, p.y, "rgba(137,164,123,0.76)", 10, 0.6);
     this.sfx.shieldBreak();
     this.emit();
   }
@@ -1296,13 +1373,13 @@ export class Game {
         p.vx = Math.max(p.vx, 320);
       } else {
         // bounce off the hazard instead of dying (and don't get stuck in it)
-        p.attached = false;
-        p.vy = Math.min(p.vy, -420);
+        p.detach();
+        p.vy = Math.min(p.vy, -300);
         p.y -= p.r * 1.5;
         p.vx = Math.max(p.vx * 0.75, 260);
       }
-      this.parts.burst(p.x, p.y, "#7df0ff", 12, 240, 2.6, 0.5, 300);
-      this.parts.ring(p.x, p.y, "rgba(125,240,255,0.9)", 6, 0.4);
+      this.parts.burst(p.x, p.y, "#91a680", 12, 240, 2.6, 0.5, 300);
+      this.parts.ring(p.x, p.y, "rgba(145,166,128,0.72)", 6, 0.4);
       this.graceT = Math.max(this.graceT, 0.5); // brief i-frames after a bump
       this.sfx.shieldUp();
       return;
@@ -1319,10 +1396,10 @@ export class Game {
     this.magnetT = 0;
     this.perfectCombo = 0;
     const p = this.player;
-    p.attached = false;
-    this.parts.burst(p.x, p.y, "#ff4d5e", 22, 380, 3.6, 0.8, 640);
+    p.detach();
+    this.parts.burst(p.x, p.y, "#bf775f", 14, 180, 2.8, 0.7, 360);
     this.parts.burst(p.x, p.y, "#ffd9de", 8, 220, 2.4, 0.6, 500);
-    this.parts.burst(p.x, p.y, "#2b3a8f", 10, 260, 3, 0.7, 620);
+    this.parts.burst(p.x, p.y, "#7c8975", 10, 260, 3, 0.7, 620);
     this.parts.ring(p.x, p.y, "rgba(255,255,255,0.9)", 8, 0.6);
     this.sfx.death();
     this.sfx.padStop();
@@ -1370,7 +1447,6 @@ export class Game {
         return;
       }
       if (o.kind === "coin" && o.got) return;
-      if (o.kind === "boost" && o.used) return;
       if ((o.kind === "shield" || o.kind === "magnet") && o.got) return;
       if (!this.taught.has(o.kind) && TIPS[o.kind]) found = o.kind;
     });
@@ -1436,35 +1512,39 @@ export class Game {
     return out;
   }
 
-  /** point the gate marker at the next floor gate ahead of the spider */
+  /** Point the waymark at the next 250 m waypoint; there is no final gate. */
   private refreshGate() {
     const p = this.player;
-    let k = 0;
-    while (k < 400 && gateX(k) < p.x - 200) k++;
+    const spacing = LEVEL_METERS * METER;
+    const k = Math.max(0, Math.ceil((p.x + 200 - this.startX) / spacing) - 1);
     this.gateIndex = k;
     const gx = gateX(k);
-    this.gateHole = { x: gx, y: this.world.lavaY(gx), r: 78 };
+    this.gateHole = { x: gx, y: this.world.lavaY(gx) - 210, r: 62 };
   }
 
-  /** dove clean through the floor gate — level cleared */
+  /** pass through the floating waymark — stretch cleared */
   private reachPortal(x: number, y: number) {
     if (this.state !== "playing") return;
+    const localGateMeters = this.gateHole
+      ? Math.max(LEVEL_METERS, Math.round((this.gateHole.x - this.startX) / METER))
+      : Math.max(0, Math.floor((this.player.x - this.startX) / METER));
+    this.distM = this.journeyMeters + localGateMeters;
     this.segStartM = this.distM;
     this.missedGate = false;
     this.state = "levelup";
     this.levelT = 0;
-    this.player.attached = false;
-    this.player.vx *= 0.2;
-    this.player.vy = Math.max(this.player.vy, 120);
-    this.trauma = Math.min(0.8, this.trauma + 0.5);
+    this.player.detach();
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.trauma = Math.min(0.25, this.trauma + 0.08);
     this.sfx.portal();
     this.sfx.levelUp();
-    this.parts.burst(x, y - 30, "#ffe79a", 26, 340, 3.4, 0.9, 380);
-    this.parts.ring(x, y - 30, "rgba(255,231,154,0.95)", 14, 0.7);
-    this.parts.ring(x, y - 30, "rgba(255,255,255,0.75)", 8, 0.5);
-    this.popup(x, y - 150, "GATE!", "#ffe79a", 40);
+    this.parts.burst(x, y - 30, "#d1b16f", 26, 340, 3.4, 0.9, 380);
+    this.parts.ring(x, y - 30, "rgba(226,203,150,0.82)", 14, 0.7);
+    this.parts.ring(x, y - 30, "rgba(251,247,231,0.64)", 8, 0.5);
+    this.popup(x, y - 150, "WAYMARK!", "#d1b16f", 40);
     if (this.level + 1 > this.unlocked) {
-      this.unlocked = Math.min(MAX_LEVELS - 1, this.level + 1);
+      this.unlocked = this.level + 1;
       try {
         localStorage.setItem(UNLOCK_KEY, String(this.unlocked));
       } catch {
@@ -1489,6 +1569,7 @@ export class Game {
       this.state,
       this.distM,
       this.coins,
+      this.tricks,
       this.best,
       this.newBest,
       this.sfx.muted,
@@ -1516,6 +1597,7 @@ export class Game {
       state: this.state,
       dist: this.distM,
       coins: this.coins,
+      tricks: this.tricks,
       best: this.best,
       newBest: this.newBest,
       muted: this.sfx.muted,
@@ -1533,7 +1615,7 @@ export class Game {
       unlocked: this.unlocked,
       theme: this.theme,
       windGain: this.windGain,
-      gateM: this.gateHole ? Math.round(this.gateHole.x / METER) : LEVEL_METERS,
+      gateM: this.journeyMeters + (this.gateHole ? Math.round((this.gateHole.x - this.startX) / METER) : LEVEL_METERS),
       segStart: this.segStartM,
       missed: this.missedGate,
     });

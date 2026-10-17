@@ -38,15 +38,13 @@ export type Obj =
   | { kind: "spire"; x: number; tip: number; base: number; w: number }
   | { kind: "plat"; x: number; y: number; w: number; h: number; pod?: boolean }
   | { kind: "saw"; x: number; y: number; r: number; bob: number; ph: number }
-  | { kind: "boost"; x: number; y: number; r: number; used: boolean }
   | { kind: "shield"; x: number; y: number; r: number; got: boolean }
   | { kind: "magnet"; x: number; y: number; r: number; got: boolean }
   | { kind: "coin"; x: number; y: number; got: boolean }
   | { kind: "wind"; x: number; y: number; w: number; h: number; vx: number; vy: number; strength: number }
   | { kind: "fire"; x: number; y: number; w: number; h: number }
   | { kind: "fish"; x: number; y: number; r: number; bob: number; ph: number; vx: number }
-  | { kind: "drone"; x: number; y: number; r: number; bob: number; ph: number; vx: number }
-  | { kind: "portal"; x: number; y: number; r: number; used: boolean };
+  | { kind: "drone"; x: number; y: number; r: number; bob: number; ph: number; vx: number };
 
 export interface Chunk {
   i: number;
@@ -58,30 +56,17 @@ export interface Chunk {
   objs: Obj[];
 }
 
-/** every level ends at a floor gate; they repeat every 250 m so a miss is not fatal */
-export const GATE_SPACING = 250 * 50; // 250 m in px
-export const GATE_COUNT = 40;
-export const gateX = (k: number): number => (k + 1) * GATE_SPACING;
+/** A quiet floating waymark every 250 m, generated without a finite level cap. */
+export const ROUTE_START_X = 90;
+export const GATE_SPACING = 250 * 50;
+export const gateX = (k: number): number => ROUTE_START_X + (k + 1) * GATE_SPACING;
 
-/** which gate (if any) sits inside this chunk, and is this chunk part of the run-up? */
-function gateInChunk(i: number): number | null {
-  const x0 = i * 480;
-  const x1 = x0 + 480;
-  for (let k = 0; k < GATE_COUNT; k++) {
-    const gx = gateX(k);
-    if (gx >= x0 && gx < x1) return gx;
-  }
-  return null;
-}
-
+/** Keep the approaches to waymarks calm and free of gaps or hazards. */
 function nearGate(i: number): boolean {
   const x0 = i * 480;
   const x1 = x0 + 480;
-  for (let k = 0; k < GATE_COUNT; k++) {
-    const gx = gateX(k);
-    if (gx > x0 - 300 && gx < x1 + 300) return true;
-  }
-  return false;
+  const k = Math.max(0, Math.floor((x0 - 300) / GATE_SPACING));
+  return gateX(k) < x1 + 300 || gateX(k + 1) < x1 + 300;
 }
 
 export class World {
@@ -105,13 +90,13 @@ export class World {
     switch (this.theme) {
       case "city":
       case "neon":
-        return { lo: 110, hi: 258, amp: 150 };
+        return { lo: 112, hi: 232, amp: 112 };
       case "underwater":
-        return { lo: 78, hi: 186, amp: 104 };
+        return { lo: 104, hi: 220, amp: 96 };
       case "jungle":
-        return { lo: 92, hi: 214, amp: 120 };
+        return { lo: 100, hi: 226, amp: 104 };
       default:
-        return { lo: 96, hi: 226, amp: 126 };
+        return { lo: 104, hi: 228, amp: 106 };
     }
   }
 
@@ -134,24 +119,21 @@ export class World {
     return lerp(this.pts[i], this.pts[i + 1], t);
   }
 
-  /** how deep the sinkhole is at this x (0 outside a pit) */
+  /** Broad, gentle swales instead of abrupt sinkholes. */
   pitDepthAt(x: number): number {
-    const dip = Math.sin(x * 0.0009) * 0.5 + 0.5;
-    return dip > 0.74 ? (dip - 0.74) * 420 : 0;
+    return Math.max(0, (noise1(x * 0.00024 + 91.7) - 0.74) * 110);
   }
 
+  /** A continuous low-poly hillside with several calm scales of variation. */
   lavaY(x: number): number {
-    const open = clamp(1 - x / 9000, 0, 1);
-    return (
-      this.lavaBase +
-      190 * open +
-      noise1(x * 0.0016 + 40.7) * 84 +
-      this.pitDepthAt(x)
-    );
+    const broad = (noise1(x * 0.00022 + 12.4) - 0.5) * 150;
+    const middle = (noise1(x * 0.00063 + 38.1) - 0.5) * 48;
+    const softDip = this.pitDepthAt(x) * 0.24;
+    return this.lavaBase + broad + middle + softDip;
   }
 
   diffAt(x: number): number {
-    return clamp((x / this.cw - 6) / 50, 0, 1);
+    return clamp((this.level / 32 + x / (this.cw * 180)), 0, 1);
   }
 
   chunkAt(x: number): Chunk {
@@ -182,7 +164,7 @@ export class World {
 
   private gen(i: number): Chunk {
     const r = (n: number) => hash(i * 13.777 + n * 7.313 + 0.17 + this.level * 0.37);
-    const t = clamp((i - 6) / 40, 0, 1);
+    const t = clamp(this.level / 32 + (i - 6) / 180, 0, 1);
     const x0 = i * this.cw;
     const x1 = x0 + this.cw;
     const objs: Obj[] = [];
@@ -190,13 +172,12 @@ export class World {
     const prevGap = prev ? prev.isGap : false;
 
     const isGateChunk = nearGate(i);
-    const gateHere = gateInChunk(i);
 
     // ---- ceiling gap (open sky) ----
     let isGap = false;
     let gapA = 1;
     let gapB = 0;
-    if (!isGateChunk && i > 9 && !prevGap && r(0) < 0.12 + 0.1 * t) {
+    if (!isGateChunk && i > 9 && !prevGap && r(0) < 0.055 + 0.035 * t) {
       isGap = true;
       const len = (260 + r(1) * 180) * (1 + 0.2 * t);
       gapA = x0 + 50 + r(2) * 70;
@@ -224,19 +205,11 @@ export class World {
     // ---- spires ----
     const spires: number[] = [];
     const spCount =
-      isGateChunk
+      isGateChunk || i < 10 || isGap
         ? 0
-        : i < 8
-        ? 0
-        : isGap
-          ? r(5) < 0.25
-            ? 1
-            : 0
-          : r(5) < 0.16 + 0.22 * t
-            ? r(6) < 0.08 + 0.3 * t
-              ? 2
-              : 1
-            : 0;
+        : r(5) < 0.04 + 0.035 * t
+          ? 1
+          : 0;
     for (let k = 0; k < spCount; k++) {
       const px = x0 + 80 + ((k + 0.6) / (spCount + 0.4)) * (this.cw - 160) + (r(7 + k) - 0.5) * 90;
       if (plats.some((p) => Math.abs(p.x - px) < p.w / 2 + 70)) continue;
@@ -257,8 +230,7 @@ export class World {
 
     // ---- stalactites / vines / ice shards ----
     if (!isGap && i > 5 && !isGateChunk) {
-      const count =
-        i < 10 ? (r(8) < 0.3 ? 1 : 0) : Math.floor(r(8) * (0.55 + 1.5 * t) + t * 0.9);
+      const count = i < 10 ? 0 : r(8) < 0.16 + 0.08 * t ? 1 : 0;
       for (let k = 0; k < count; k++) {
         const sx = x0 + 40 + r(20 + k * 3) * (this.cw - 80);
         if (spires.some((px) => Math.abs(px - sx) < 80)) continue;
@@ -267,46 +239,14 @@ export class World {
       }
     }
 
-    // ---- saws / drones ----
-    if (!isGateChunk && i > 12 && r(9) < 0.07 + 0.16 * t) {
-      const sx = x0 + 90 + r(22) * (this.cw - 180);
-      if (!spires.some((px) => Math.abs(px - sx) < 110)) {
-        const cy = clamp(this.ceilY(sx) + 150 + r(23) * 190, this.ceilY(sx) + 130, this.lavaY(sx) - 140);
-        objs.push({ kind: "saw", x: sx, y: cy, r: 22 + r(24) * 8, bob: 8 + r(25) * 28 * t, ph: r(26) * Math.PI * 2 });
-      }
-    }
-
-    // ---- drones (moving) in later levels ----
-    if (this.theme === "city" || this.theme === "neon" || this.theme === "space") {
-      if (!isGateChunk && i > 18 && r(50) < 0.1 + 0.1 * t) {
-        const dx = x0 + 90 + r(51) * (this.cw - 180);
-        const dy = clamp(this.ceilY(dx) + 160 + r(52) * 180, this.ceilY(dx) + 140, this.lavaY(dx) - 160);
-        objs.push({ kind: "drone", x: dx, y: dy, r: 20 + r(53) * 6, bob: 12 + r(54) * 20, ph: r(55) * Math.PI * 2, vx: (r(56) > 0.5 ? 1 : -1) * (40 + r(57) * 60) });
-      }
-    }
-
+    // Moving wildlife is a peaceful visual cue, never a lethal obstacle.
     // ---- fish (underwater) ----
     if (this.theme === "underwater") {
-      if (!isGateChunk && i > 6 && r(60) < 0.2 + 0.14 * t) {
+      if (!isGateChunk && i > 6 && r(60) < 0.1 + 0.06 * t) {
         const fx = x0 + 60 + r(61) * (this.cw - 120);
         const fy = clamp(this.ceilY(fx) + 180 + r(62) * 220, this.ceilY(fx) + 150, this.lavaY(fx) - 120);
         objs.push({ kind: "fish", x: fx, y: fy, r: 18 + r(63) * 6, bob: 6 + r(64) * 16, ph: r(65) * Math.PI * 2, vx: (r(66) > 0.5 ? 1 : -1) * (50 + r(67) * 70) });
       }
-    }
-
-    // ---- burning roof line: never two chunks in a row, so flames stay rare ----
-    const prevHadFire =
-      prev !== undefined && prev.objs.some((o) => o.kind === "fire");
-    const fieryTheme = this.theme === "volcano" || this.theme === "neon";
-    if (fieryTheme && !prevHadFire && !isGateChunk && i > 10 && r(70) < 0.34 + 0.18 * t) {
-      const fx = x0 + 70 + r(71) * (this.cw - 200);
-      objs.push({
-        kind: "fire",
-        x: fx,
-        y: this.ceilY(fx) + 2,
-        w: 70 + r(72) * 80,
-        h: 26 + r(73) * 18,
-      });
     }
 
     // ---- air current: at most one per chunk, never in two chunks in a row,
@@ -314,7 +254,7 @@ export class World {
     const prevHadWind =
       prev !== undefined && prev.objs.some((o) => o.kind === "wind");
     const wantWind =
-      !isGateChunk && !prevHadWind && i > 3 && r(80) < 0.32 + 0.1 * t;
+      !isGateChunk && !prevHadWind && i > 3 && r(80) < 0.13 + 0.05 * t;
     if (wantWind) {
       const wx = x0 + this.cw * 0.5 + (r(82) - 0.5) * 110;
       // the whole band has to sit in open air: under the roof, above the street
@@ -326,7 +266,7 @@ export class World {
       const hi = floor - 150 - hgt / 2;
       if (hi > lo) {
         const wy = clamp(lo + r(83) * (hi - lo), lo, hi);
-        const strength = 300 + r(87) * 260;
+        const strength = 110 + r(87) * 110;
         const ang = -Math.PI * (0.14 + r(86) * 0.3); // always forward and up
         objs.push({
           kind: "wind",
@@ -368,21 +308,6 @@ export class World {
       }
     }
 
-    // ---- boost rings ----
-    const wantBoost = i === 4 || (i > 2 && r(40) < 0.16 + 0.1 * t);
-    if (wantBoost) {
-      const attempts = i === 5 ? 6 : 2;
-      for (let a = 0; a < attempts; a++) {
-        const bx = x0 + 90 + hash(i * 7.31 + a * 3.97 + 40.2) * (this.cw - 180);
-        if (spires.some((px) => Math.abs(px - bx) < 130)) continue;
-        const lo = this.ceilY(bx) + 150;
-        const hi = this.lavaY(bx) - 150;
-        if (hi - lo <= 60) continue;
-        objs.push({ kind: "boost", x: bx, y: clamp(lo + r(42) * (hi - lo), lo, hi), r: 24, used: false });
-        break;
-      }
-    }
-
     // ---- power-ups ----
     if (i === 7 || (i > 5 && r(44) < 0.16 + 0.05 * t))
       this.placePower(objs, spires, plats, i, "shield", 44, i === 7);
@@ -417,23 +342,6 @@ export class World {
         }
       }
     }
-    // ---- a boost ring right before every open sky gap ----
-    if (isGap && gapA - 190 > x0 - 40) {
-      const bx = gapA - 150;
-      objs.push({
-        kind: "boost",
-        x: bx,
-        y: clamp(this.ceilY(bx) + 130, this.ceilY(bx) + 110, this.lavaY(bx) - 160),
-        r: 24,
-        used: false,
-      });
-    }
-
-    // ---- the floor gate (one per 250 m stretch) ----
-    if (gateHere !== null) {
-      objs.push({ kind: "portal", x: gateHere, y: this.lavaY(gateHere), r: 78, used: false });
-    }
-
     return { i, x0, x1, gapA, gapB, isGap, objs };
   }
 
@@ -475,7 +383,7 @@ export class World {
         !force &&
         objs.some(
           (o) =>
-            (o.kind === "boost" || o.kind === "shield" || o.kind === "magnet") &&
+            (o.kind === "shield" || o.kind === "magnet") &&
             Math.abs(o.x - px) < 110 &&
             Math.abs(o.y - py) < 120,
         )
@@ -485,7 +393,7 @@ export class World {
         force &&
         objs.some(
           (o) =>
-            (o.kind === "boost" || o.kind === "shield" || o.kind === "magnet") &&
+            (o.kind === "shield" || o.kind === "magnet") &&
             Math.abs(o.x - px) < 60 &&
             Math.abs(o.y - py) < 70,
         )
@@ -537,12 +445,6 @@ export class World {
           const dx2 = o.x + Math.sin(time * 0.7 + o.ph) * 78;
           const dy2 = o.y + Math.sin(time * 1.4 + o.ph) * o.bob;
           if (dist(x, y, dx2, dy2) < o.r + r) hit = true;
-          break;
-        }
-        case "fish": {
-          const fx = o.x + Math.sin(time * 0.55 + o.ph) * 60;
-          const fy = o.y + Math.sin(time * 1.1 + o.ph) * o.bob;
-          if (dist(x, y, fx, fy) < o.r + r) hit = true;
           break;
         }
         case "fire": {

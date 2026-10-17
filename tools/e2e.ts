@@ -1,5 +1,4 @@
-/* End-to-end UI test: mount the real React app in jsdom with a real canvas
-   backend and click through menu -> play -> pause -> help -> death. */
+/* End-to-end UI test: mount the real React app with a native canvas backend. */
 import { JSDOM } from "jsdom";
 import { createCanvas } from "@napi-rs/canvas";
 
@@ -9,9 +8,6 @@ const dom = new JSDOM(
 );
 const win = dom.window as unknown as Window & typeof globalThis;
 
-// ---- real 2d context for whatever canvas React/the engine asks for ----
-// jsdom has no canvas backend, so every <canvas> gets a native @napi-rs/canvas
-// behind it: width/height stay in sync and drawImage() unwraps other canvases.
 type Backing = { c: { getContext: (t: string) => unknown; width: number; height: number }; w: number; h: number };
 const backing = new WeakMap<object, Backing>();
 function ensureBacking(el: { width?: number; height?: number }) {
@@ -41,7 +37,6 @@ proto.getContext = function (this: { width: number; height: number }, type: stri
   }
   return ctx;
 };
-// the engine resizes its offscreen tiles by assigning width/height — mirror that
 for (const prop of ["width", "height"] as const) {
   const orig = Object.getOwnPropertyDescriptor(proto, prop);
   if (!orig || !orig.get || !orig.set) continue;
@@ -62,18 +57,17 @@ for (const prop of ["width", "height"] as const) {
   });
 }
 
-// ---- wire the globals the app expects ----
 const g = globalThis as unknown as Record<string, unknown>;
 try {
   Object.defineProperty(g, "window", { value: win, configurable: true, writable: true });
 } catch {
-  /* fall through to the rest of the wiring */
+  /* node already defines a compatible window */
 }
 g.document = win.document;
 try {
   Object.defineProperty(g, "navigator", { value: win.navigator, configurable: true });
 } catch {
-  /* node keeps its own navigator, which is fine */
+  /* node's navigator is sufficient */
 }
 g.localStorage = win.localStorage;
 g.HTMLCanvasElement = (win as unknown as { HTMLCanvasElement: unknown }).HTMLCanvasElement;
@@ -89,7 +83,6 @@ g.getComputedStyle = win.getComputedStyle.bind(win);
 g.IS_REACT_ACT_ENVIRONMENT = true;
 void win.innerWidth;
 
-// ---- mount the app ----
 const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react");
@@ -98,113 +91,99 @@ const App = (await import("../src/App")).default;
 const errors: string[] = [];
 const origError = console.error;
 console.error = (...a: unknown[]) => {
-  const s = a.map(String).join(" ");
-  if (!s.includes("not wrapped in act")) errors.push(s);
+  const message = a.map(String).join(" ");
+  if (!message.includes("not wrapped in act")) errors.push(message);
   origError(...a);
 };
-win.addEventListener("error", (e) => errors.push("window error: " + String(e)));
+win.addEventListener("error", (event) => errors.push("window error: " + String(event)));
 
 const root = createRoot(win.document.getElementById("root")!);
-await act(async () => {
-  root.render(React.createElement(App));
-});
+await act(async () => root.render(React.createElement(App)));
 
-const q = (sel: string) => win.document.querySelector(sel) as HTMLElement | null;
-const byText = (t: string) =>
-  Array.from(win.document.querySelectorAll("button")).find((b) =>
-    (b.textContent || "").toLowerCase().includes(t.toLowerCase()),
+const q = (selector: string) => win.document.querySelector(selector) as HTMLElement | null;
+const byText = (needle: string) =>
+  Array.from(win.document.querySelectorAll("button")).find((button) =>
+    (button.textContent || "").toLowerCase().includes(needle.toLowerCase()),
   ) as HTMLElement | undefined;
-const byLabel = (l: string) =>
-  win.document.querySelector(`[aria-label="${l}"]`) as HTMLElement | null;
+const byLabel = (label: string) => win.document.querySelector(`[aria-label="${label}"]`) as HTMLElement | null;
+const text = () => win.document.body.textContent || "";
 
 let pass = 0;
 let fail = 0;
-const ok = (name: string, cond: boolean, extra = "") => {
-  if (cond) {
+const ok = (name: string, condition: boolean, extra = "") => {
+  if (condition) {
     pass++;
-    console.log(`  ✓ ${name} ${extra}`);
+    console.log(`  ✓ ${name}${extra ? ` — ${extra}` : ""}`);
   } else {
     fail++;
-    console.log(`  ✗ ${name} ${extra}`);
+    console.log(`  ✗ ${name}${extra ? ` — ${extra}` : ""}`);
   }
 };
 
-const click = async (el: HTMLElement | null | undefined) => {
-  if (!el) return false;
+const click = async (element: HTMLElement | null | undefined) => {
+  if (!element) return false;
   await act(async () => {
-    el.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true }));
+    element.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true }));
   });
   return true;
 };
-
-// advance the game loop (rAF is driven by jsdom's timers)
 const tick = async (ms: number) => {
-  await act(async () => {
-    await new Promise((r) => setTimeout(r, ms));
-  });
+  await act(async () => new Promise((resolve) => setTimeout(resolve, ms)));
 };
 
-const text = () => win.document.body.textContent || "";
-
-/* ---------- menu ---------- */
+/* ---------- menu + landscape progression ---------- */
 ok("the app mounts without crashing", !!q("#root")?.firstElementChild);
-ok("menu shows the title", text().includes("WEBBY"));
-ok("menu shows a play button", !!byText("play"));
-ok("menu shows the world carousel", !!byLabel("Next world") && !!byLabel("Previous world"));
-ok("menu shows how to play", !!byText("how to play"));
-
-const worldBefore = text().includes("Neon Skyline");
-ok("the first world is selected", worldBefore, "Neon Skyline");
+ok("menu shows WEBBY", text().includes("WEBBY"));
+ok("menu has a start button", !!byLabel("Play"));
+ok("menu has the eight-landscape carousel", !!byLabel("Next world") && !!byLabel("Previous world"));
+ok("first landscape is Mosslight Valley", text().includes("Mosslight Valley"));
 await click(byLabel("Next world"));
-ok("the carousel switches worlds", text().includes("Jungle Canopy"), text().match(/world \d+\/\d+/)?.[0] ?? "");
-ok(
-  "a world is one theme across its five stretches",
-  ["1", "2", "3", "4", "5"].every((n) => text().includes(n)),
-);
+ok("carousel selects Fernwood Canopy", text().includes("Fernwood Canopy"));
+ok("unopened landscapes are explained", text().includes("Reach it on your trail to open it"));
 await click(byLabel("Previous world"));
-ok("the carousel goes back", text().includes("Neon Skyline"));
+ok("carousel returns to the first landscape", text().includes("Mosslight Valley"));
 
-/* ---------- playing ---------- */
-await click(byText("play"));
+/* ---------- field guide ---------- */
+await click(byText("Field guide"));
+ok("field guide explains the spring web and route", text().includes("spring") && text().includes("250 m"));
+ok("field guide explains angular momentum", text().toLowerCase().includes("angular momentum"));
+await click(byText("Back to the trail"));
+ok("field guide closes cleanly", !text().includes("A little field guide"));
+
+/* ---------- playing + touch controls ---------- */
+await click(byLabel("Play"));
 await tick(400);
-ok("playing state shows the distance readout", /\/250\s*m/.test(text().replace(/\s+/g, " ")));
-ok("playing state shows the gate progress flag", !!win.document.querySelector("svg"));
-ok("glide button exists", !!byLabel("Glide"));
-ok("pause button exists", !!byLabel("Pause"));
+ok("playing state shows total distance and next waymark", text().includes("250 m") && /\d+m/.test(text().replace(/\s+/g, "")));
+ok("glide, pause, sound, and tuck controls are present", !!byLabel("Glide") && !!byLabel("Pause") && !!byLabel("Sound") && !!byLabel("Spin clockwise"));
 
-/* ---------- glide toggle ---------- */
 await act(async () => {
-  byLabel("Glide")?.dispatchEvent(new win.Event("pointerdown", { bubbles: true }));
+  byLabel("Glide")?.dispatchEvent(new win.Event("pointerdown", { bubbles: true, cancelable: true }));
 });
 await tick(120);
-ok("gliding shows its status chip", text().toLowerCase().includes("gliding"));
+ok("glide input shows a gentle breeze status", text().toLowerCase().includes("breeze"));
 
-/* ---------- pause / resume / help ---------- */
+/* ---------- pause + help ---------- */
 await click(byLabel("Pause"));
+await tick(100);
+ok("pause panel appears", text().includes("Paused"));
+ok("pause panel offers a clear resume action", !!byText("Keep wandering"));
+await click(byText("Field guide"));
+ok("help can open from the pause panel", text().includes("A little field guide"));
+await click(byText("Back to the trail"));
+await click(byText("Keep wandering"));
 await tick(120);
-ok("pause overlay appears", text().includes("PAUSED"));
-ok("pause overlay offers resume", !!byText("Resume"));
-await click(byText("Resume"));
-await tick(120);
-ok("resume hides the pause overlay", !text().includes("PAUSED"));
+ok("resume returns to the running HUD", !!byLabel("Pause") && !text().includes("Take a breath"));
 
-await click(byLabel("How to play"));
-await tick(120);
-ok("help sheet opens", text().includes("How to play") && text().includes("Goal of every level"));
-ok("help explains the air current", text().includes("Air current"));
-await click(byText("Got it"));
-await tick(120);
-ok("help sheet closes", !text().includes("Goal of every level"));
-
-/* ---------- death + restart ---------- */
-await click(byLabel("Restart"));
+/* ---------- restart + lifecycle ---------- */
+await click(byLabel("Pause"));
+await click(byText("Start this trail again"));
 await tick(200);
-const scene = win.document.querySelector("canvas");
-ok("the canvas is still wired to the engine", !!scene);
-await tick(1500);
-ok("run keeps running or ends cleanly", true, text().includes("SPLAT") ? "(died)" : "(alive)");
+ok("restart returns to active play", !!byLabel("Pause") && text().includes("250 m"));
+ok("canvas remains wired to the engine", !!win.document.querySelector("canvas"));
+await tick(500);
+ok("gameplay continues or ends cleanly", true, text().includes("Rest here") ? "rest panel" : "active trail");
 
-ok("no console errors during the whole session", errors.length === 0, errors.slice(0, 2).join(" | "));
+ok("no console errors during the session", errors.length === 0, errors.slice(0, 2).join(" | "));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

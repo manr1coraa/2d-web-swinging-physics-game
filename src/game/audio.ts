@@ -162,26 +162,18 @@ export class Sfx {
     this.tone(587, 587, 0.14, "triangle", 0.12, 0.09);
   }
 
-  /** boost ring hit — rising sweep */
-  boost() {
-    this.tone(280, 1150, 0.28, "sawtooth", 0.12);
-    this.tone(560, 1700, 0.34, "sine", 0.1, 0.03);
-    this.noise(0.26, 0.1, 1600, "bandpass");
-  }
-
   shieldUp() {
     this.tone(760, 760, 0.08, "sine", 0.12);
     this.tone(1140, 1140, 0.18, "sine", 0.1, 0.06);
   }
 
   shieldBreak() {
-    this.tone(420, 80, 0.32, "sawtooth", 0.16);
-    this.noise(0.3, 0.15, 900, "lowpass");
+    this.tone(580, 240, 0.22, "triangle", 0.12);
   }
 
   magnetUp() {
-    this.tone(440, 880, 0.22, "triangle", 0.11);
-    this.tone(660, 1320, 0.22, "sine", 0.08, 0.05);
+    this.tone(440, 660, 0.18, "triangle", 0.1);
+    this.tone(660, 990, 0.2, "sine", 0.08, 0.05);
   }
 
   /** perfect release — pitch climbs with combo */

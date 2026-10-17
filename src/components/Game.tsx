@@ -2,48 +2,41 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Play,
   RotateCcw,
+  RotateCw,
   Volume2,
   VolumeX,
-  Coins,
+  Leaf,
   Trophy,
-  Gauge,
   Pause,
-  ShieldCheck,
-  Magnet,
   Home,
   HelpCircle,
-  AlertTriangle,
-  Sparkles,
-  Info,
-  Wind,
-  Lock,
-  Flag,
-  Waves,
-  Trees,
-  Snowflake,
-  Flame,
-  Rocket,
-  Building2,
-  Sun,
-  Droplets,
   ChevronLeft,
   ChevronRight,
+  Flag,
+  Wind,
+  Trees,
+  Snowflake,
+  Sun,
+  Waves,
+  Flower2,
+  Mountain,
+  Compass,
 } from "lucide-react";
-import { Game, MAX_LEVELS, type Snap } from "../game/engine";
-import { LEVELS_PER_WORLD, themeForLevel, type ThemeId } from "../game/world";
+import { Game, LEVEL_METERS, type Snap } from "../game/engine";
+import { LEVELS_PER_WORLD, THEMES, themeForLevel, type ThemeId } from "../game/world";
 import { THEME_DEFS } from "../game/themes";
 import { ChunkyButton, RoundButton, Panel, Sticker } from "./ui";
 import HowToPlay from "./HowToPlay";
 import AnnounceOverlay from "./Announce";
 
 const causeText: Record<string, string> = {
-  lava: "splattered on the avenue",
-  spike: "clipped a construction girder",
-  saw: "swatted by a patrol drone",
-  spire: "flew straight into a tower",
-  fire: "roasted on a burning rooftop",
-  fish: "kissed a very big fish",
-  drone: "shot down by a hunter drone",
+  lava: "the hillside caught the web",
+  spike: "a branch crossed the path",
+  saw: "a little bird bumped the swing",
+  spire: "a pine stood in the way",
+  fire: "a warm lantern marked the trail",
+  fish: "a fish drifted past",
+  drone: "a bird crossed the way",
 };
 
 const initialSnap: Snap = {
@@ -53,6 +46,7 @@ const initialSnap: Snap = {
   theme: "city",
   dist: 0,
   coins: 0,
+  tricks: 0,
   best: 0,
   newBest: false,
   muted: false,
@@ -67,40 +61,52 @@ const initialSnap: Snap = {
   announce: null,
   lowAlt: 0,
   windGain: 0,
-  gateM: 250,
+  gateM: LEVEL_METERS,
   segStart: 0,
   missed: false,
 };
 
-const THEME_ICON: Record<ThemeId, typeof Wind> = {
-  city: Building2,
+const WORLD_ICON: Record<ThemeId, typeof Leaf> = {
+  city: Sun,
   jungle: Trees,
   underwater: Waves,
   desert: Sun,
   ice: Snowflake,
-  volcano: Flame,
-  space: Rocket,
-  neon: Droplets,
+  volcano: Flower2,
+  space: Mountain,
+  neon: Compass,
 };
 
-/** Every world is five stretches of one place; you pick it and start at stretch 1. */
-const WORLDS = Array.from(
-  { length: Math.ceil(MAX_LEVELS / LEVELS_PER_WORLD) },
-  (_, i) => i * LEVELS_PER_WORLD,
-);
+const WORLDS = THEMES.map((_, i) => i * LEVELS_PER_WORLD);
+
+function holdPointer(action: (down: boolean) => void) {
+  return {
+    onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      action(true);
+    },
+    onPointerUp: (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      action(false);
+    },
+    onPointerLeave: () => action(false),
+    onPointerCancel: () => action(false),
+    onContextMenu: (event: React.MouseEvent<HTMLButtonElement>) => event.preventDefault(),
+  };
+}
 
 export default function GameScreen() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<Game | null>(null);
   const [snap, setSnap] = useState<Snap>(initialSnap);
-  const [mouseIdle, setMouseIdle] = useState(false);
   const [help, setHelp] = useState(false);
-  const [world, setWorld] = useState(0); // world index, not level index
+  const [world, setWorld] = useState(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const game = new Game(canvas, (s) => setSnap(s));
+    const game = new Game(canvas, (next) => setSnap(next));
     gameRef.current = game;
     return () => {
       game.dispose();
@@ -108,31 +114,19 @@ export default function GameScreen() {
     };
   }, []);
 
-  // cursor hides only while swinging with an idle mouse
   useEffect(() => {
-    let timer = window.setTimeout(() => setMouseIdle(true), 1600);
-    const wake = (e: PointerEvent) => {
-      if (e.pointerType !== "mouse") return;
-      setMouseIdle(false);
-      clearTimeout(timer);
-      timer = window.setTimeout(() => setMouseIdle(true), 1600);
-    };
-    window.addEventListener("pointermove", wake);
-    window.addEventListener("pointerdown", wake);
-    return () => {
-      window.removeEventListener("pointermove", wake);
-      window.removeEventListener("pointerdown", wake);
-      clearTimeout(timer);
-    };
-  }, []);
+    if (snap.state === "menu") {
+      const furthestWorld = Math.floor(snap.unlocked / LEVELS_PER_WORLD) % WORLDS.length;
+      setWorld(furthestWorld);
+    }
+  }, [snap.state, snap.unlocked]);
 
-  // swallow game hotkeys while the help sheet is open
   useEffect(() => {
     if (!help) return;
-    const block = (e: KeyboardEvent) => {
-      if (e.code === "Escape") setHelp(false);
-      e.stopPropagation();
-      if (e.code === "Space") e.preventDefault();
+    const block = (event: KeyboardEvent) => {
+      if (event.code === "Escape") setHelp(false);
+      event.stopPropagation();
+      if (event.code === "Space") event.preventDefault();
     };
     window.addEventListener("keydown", block, true);
     window.addEventListener("keyup", block, true);
@@ -142,353 +136,243 @@ export default function GameScreen() {
     };
   }, [help]);
 
-  // keep the picker on the furthest world the player has opened
-  useEffect(() => {
-    if (snap.state === "menu") setWorld(Math.floor(snap.unlocked / 5));
-  }, [snap.state, snap.unlocked]);
-
-  const playing = snap.state === "playing" || snap.state === "dying";
-  const hideCursor = snap.state === "playing" && mouseIdle && !help;
-  const theme = THEME_DEFS[snap.theme];
-
-  const worldStart = WORLDS[world];
+  const worldStart = WORLDS[world] ?? 0;
   const worldUnlocked = snap.unlocked >= worldStart;
-  const stretches = useMemo(
-    () =>
-      Array.from({ length: LEVELS_PER_WORLD }, (_, k) => ({
-        lv: worldStart + k,
-        n: k + 1,
-        open: worldStart + k <= snap.unlocked,
-      })),
-    [worldStart, snap.unlocked],
-  );
-  const worldName = THEME_DEFS[themeForLevel(worldStart)].name;
-  const worldTag = THEME_DEFS[themeForLevel(worldStart)].tag;
-  const WorldIcon = THEME_ICON[themeForLevel(worldStart)];
+  const currentWorldId = themeForLevel(worldStart);
+  const worldName = THEME_DEFS[currentWorldId].name;
+  const worldTag = THEME_DEFS[currentWorldId].tag;
+  const WorldIcon = WORLD_ICON[currentWorldId];
+  const inRun = snap.state === "playing" || snap.state === "dying";
+  const progress = useMemo(() => {
+    const span = Math.max(1, snap.gateM - snap.segStart);
+    return Math.min(1, Math.max(0, (snap.dist - snap.segStart) / span));
+  }, [snap.dist, snap.gateM, snap.segStart]);
+  const openedWorlds = Math.min(WORLDS.length, Math.floor(snap.unlocked / LEVELS_PER_WORLD) + 1);
 
-  const openHelp = () => {
-    gameRef.current?.pause();
-    setHelp(true);
-  };
-
-  const gateM = Math.max(snap.gateM, snap.segStart + 1);
-  const progress = Math.min(
-    1,
-    Math.max(0, (snap.dist - snap.segStart) / (gateM - snap.segStart)),
-  );
+  const pickWorld = (index: number) => setWorld((index + WORLDS.length) % WORLDS.length);
+  const playSelected = () => gameRef.current?.start(worldUnlocked ? worldStart : 0);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[#070b22]">
+    <div className="relative h-full w-full overflow-hidden bg-[#b9d2c2] text-[#405447]">
       <canvas
         ref={canvasRef}
-        className={`absolute inset-0 block h-full w-full touch-none ${
-          hideCursor ? "cursor-none" : "cursor-pointer"
-        } ${help ? "pointer-events-none" : ""}`}
+        className={`absolute inset-0 block h-full w-full touch-none ${help ? "pointer-events-none" : "cursor-pointer"}`}
       />
-
       <div className="vignette pointer-events-none absolute inset-0" />
 
-      {/* ============ HUD ============ */}
-      {playing && !help && (
+      {/* ---------------- compact in-run HUD ---------------- */}
+      {inRun && !help && (
         <div className="pointer-events-none absolute inset-0">
-          {/* distance + gate progress */}
-          <div className="absolute inset-x-0 top-3 flex flex-col items-center">
-            <div className="font-display text-5xl font-extrabold leading-none text-white/95 [text-shadow:0_3px_0_rgba(8,10,30,0.55),0_10px_26px_rgba(0,0,0,0.55)] sm:text-6xl">
-              {snap.dist}
-              <span className="ml-1.5 text-lg font-bold text-white/35">
-                /{gateM}m
-              </span>
-            </div>
-            <div className="mt-2 flex w-[200px] items-center gap-2 sm:w-[260px]">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-black/45">
-                <div
-                  className="h-full rounded-full transition-[width] duration-150"
-                  style={{
-                    width: `${progress * 100}%`,
-                    background: theme.trim,
-                  }}
-                />
-              </div>
-              <Flag size={12} className="shrink-0 text-white/45" />
-            </div>
-            {snap.missed && (
-              <div className="font-display mt-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#ff8b9d]">
-                gate missed · next at {gateM} m
-              </div>
-            )}
-          </div>
-
-          {/* controls */}
-          <div className="pointer-events-auto absolute left-3 top-3 flex gap-1.5 sm:left-4 sm:top-4">
+          <div className="pointer-events-auto absolute left-3 top-3 flex gap-2 sm:left-5 sm:top-5">
             <RoundButton onClick={() => gameRef.current?.pause()} title="Pause (P)" ariaLabel="Pause">
-              <Pause size={15} />
+              <Pause size={16} />
             </RoundButton>
-            <RoundButton onClick={() => gameRef.current?.start()} title="Restart (R)" ariaLabel="Restart">
-              <RotateCcw size={15} />
-            </RoundButton>
-            <RoundButton onClick={openHelp} title="How to play" ariaLabel="How to play">
-              <HelpCircle size={15} />
-            </RoundButton>
-          </div>
-
-          {/* coins + live power-ups */}
-          <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5 sm:right-4 sm:top-4">
-            <div className="font-display flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#12172c]/80 px-3 py-2 text-base font-bold leading-none text-[#e8b64a]">
-              <Coins size={14} />
-              {snap.coins}
-            </div>
-            {snap.shield && (
-              <div className="font-display flex items-center gap-1.5 rounded-xl border border-[#40d6aa]/40 bg-[#12172c]/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8ff0d2]">
-                <ShieldCheck size={12} /> shield
-              </div>
-            )}
-            {snap.magnetT > 0 && (
-              <div className="font-display flex items-center gap-1.5 rounded-xl border border-[#e86082]/40 bg-[#12172c]/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#ff9db0]">
-                <Magnet size={12} /> {Math.ceil(snap.magnetT)}s
-              </div>
-            )}
-            {snap.gliding && (
-              <div className="font-display flex items-center gap-1.5 rounded-xl border border-[#5cc8ea]/40 bg-[#12172c]/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8fdcff]">
-                <Wind size={12} /> gliding
-              </div>
-            )}
-            {snap.graceT > 0 && snap.graceT < 3 && (
-              <div className="font-display flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#12172c]/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/45">
-                <Sparkles size={12} /> safe {Math.ceil(snap.graceT)}s
-              </div>
-            )}
-          </div>
-
-          {/* hazard warning — a soft edge glow, nothing more */}
-          {snap.lowAlt > 0.25 && snap.state === "playing" && (
-            <>
-              <div
-                className="pointer-events-none absolute inset-0"
-                style={{
-                  boxShadow: `inset 0 -120px 110px -100px rgba(255,60,90,${(snap.lowAlt * 0.7).toFixed(2)})`,
-                }}
-              />
-              <div className="absolute inset-x-0 bottom-24 flex justify-center">
-                <div
-                  className="font-display flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-[#ff8b9d]"
-                  style={{ opacity: Math.min(1, snap.lowAlt * 1.6) }}
-                >
-                  <AlertTriangle size={14} />
-                  {snap.gliding ? "climbing out" : "pull up"}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* GLIDE */}
-          <div className="pointer-events-auto absolute bottom-5 right-4 flex flex-col items-center sm:bottom-6 sm:right-5">
-            <button
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                gameRef.current?.setGlide(true);
-              }}
-              onPointerUp={(e) => {
-                e.stopPropagation();
-                gameRef.current?.setGlide(false);
-              }}
-              onPointerLeave={() => gameRef.current?.setGlide(false)}
-              onPointerCancel={() => gameRef.current?.setGlide(false)}
-              onContextMenu={(e) => e.preventDefault()}
-              aria-label="Glide"
-              className={`font-display flex h-[68px] w-[68px] select-none flex-col items-center justify-center gap-0.5 rounded-full border text-[9px] font-bold uppercase tracking-[0.12em] transition-colors duration-100 ${
-                snap.gliding
-                  ? "border-[#5cc8ea]/60 bg-[#2a6f8c] text-white"
-                  : "border-white/12 bg-[#12172c]/80 text-white/60"
-              }`}
-            >
-              <Wind size={20} strokeWidth={2.4} />
-              glide
-            </button>
-            <div className="font-display mt-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-white/25">
-              hold · shift
-            </div>
-          </div>
-
-          {/* contextual lesson — flat, quiet */}
-          {snap.tip && (
-            <div className="absolute inset-x-0 bottom-6 flex justify-center px-3">
-              <div className="anim-pop-in flex max-w-md items-start gap-2.5 rounded-xl border border-white/10 bg-[#0e1226]/90 px-3.5 py-2.5 backdrop-blur-sm">
-                <div className="mt-0.5 shrink-0 text-white/40">
-                  {snap.tip.tone === "danger" ? (
-                    <AlertTriangle size={15} />
-                  ) : snap.tip.tone === "good" ? (
-                    <Sparkles size={15} />
-                  ) : (
-                    <Info size={15} />
-                  )}
-                </div>
-                <div>
-                  <div className="font-display text-[13px] font-bold leading-tight text-white/90">
-                    {snap.tip.title}
-                  </div>
-                  <div className="mt-0.5 text-[11px] font-semibold leading-snug text-white/45">
-                    {snap.tip.text}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ============ MENU ============ */}
-      {snap.state === "menu" && !help && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-5 text-center">
-          <h1 className="anim-pop-in font-display text-[58px] font-extrabold leading-[0.9] tracking-tight text-white [text-shadow:0_6px_24px_rgba(0,0,0,0.7)] sm:text-[76px]">
-            WEBBY<span className="text-[#e8465f]">!</span>
-          </h1>
-          <p className="anim-pop-in mt-2.5 max-w-xs text-[13px] font-semibold leading-relaxed text-white/40">
-            Swing 250 m, then drop through the hole in the street.
-          </p>
-
-          <div className="anim-pop-in-d1 mt-7 flex w-full max-w-sm flex-col items-center gap-3">
-            {/* world picker: one world, five levels, no wall of tiles */}
-            <div className="flex w-full items-center justify-between gap-2">
-              <button
-                onClick={() => setWorld((w) => Math.max(0, w - 1))}
-                disabled={world === 0}
-                aria-label="Previous world"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-[#12172c]/80 text-white/55 transition-colors hover:text-white disabled:opacity-30"
-              >
-                <ChevronLeft size={18} />
-              </button>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-center gap-2">
-                  <WorldIcon size={15} style={{ color: THEME_DEFS[themeForLevel(worldStart)].trim }} />
-                  <span className="font-display truncate text-xl font-extrabold text-white">
-                    {worldName}
-                  </span>
-                </div>
-                <div className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.2em] text-white/35">
-                  {worldTag} · world {world + 1}/{WORLDS.length}
-                </div>
-                {!worldUnlocked && (
-                  <div className="font-display mt-1 flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-white/30">
-                    <Lock size={11} /> clear world {world} first
-                  </div>
-                )}
-                {/* level pips: which of this world's five stretches are open */}
-                <div className="mt-2 flex items-center justify-center gap-1.5">
-                  {Array.from({ length: 5 }, (_, k) => {
-                    const lv = worldStart + k;
-                    const open = lv <= snap.unlocked;
-                    return (
-                      <span
-                        key={k}
-                        className="h-1.5 w-6 rounded-full"
-                        style={{
-                          background: open
-                            ? THEME_DEFS[themeForLevel(lv)].trim
-                            : "rgba(255,255,255,0.12)",
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-
-              <button
-                onClick={() => setWorld((w) => Math.min(WORLDS.length - 1, w + 1))}
-                disabled={world === WORLDS.length - 1}
-                aria-label="Next world"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-[#12172c]/80 text-white/55 transition-colors hover:text-white disabled:opacity-30"
-              >
-                <ChevronRight size={18} />
-              </button>
-            </div>
-
-            <button
-              onClick={() => gameRef.current?.start(worldUnlocked ? worldStart : 0)}
-              aria-label="Play"
-              className="font-display mt-1 flex items-center gap-2.5 rounded-xl border-b-2 border-[#8f1f33] bg-[#e8465f] px-8 py-3.5 text-sm font-bold uppercase tracking-[0.16em] text-white transition-colors hover:bg-[#f4576f] active:translate-y-[3px] active:border-b-0"
-            >
-              <Play className="h-5 w-5 fill-current" />
-              play
-            </button>
-
-            {/* the five stretches of this world */}
-            <div className="flex items-center justify-center gap-1.5">
-              {stretches.map(({ lv, n, open }) => (
-                <span
-                  key={lv}
-                  title={
-                    open
-                      ? `stretch ${n} (level ${lv + 1}) — start here`
-                      : `stretch ${n} — locked`
-                  }
-                  className="font-display rounded-md border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em]"
-                  style={{
-                    borderColor: open
-                      ? `${THEME_DEFS[themeForLevel(lv)].trim}55`
-                      : "rgba(255,255,255,0.1)",
-                    color: open
-                      ? THEME_DEFS[themeForLevel(lv)].trim
-                      : "rgba(255,255,255,0.22)",
-                    background: "rgba(10,13,28,0.7)",
-                  }}
-                >
-                  {n}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="anim-pop-in-d2 mt-7 flex items-center gap-2">
-            <ChunkyButton tone="ghost" size="sm" onClick={() => setHelp(true)}>
-              <HelpCircle size={13} />
-              how to play
-            </ChunkyButton>
             <RoundButton
               onClick={() => gameRef.current?.toggleMute()}
               title="Sound (M)"
               ariaLabel="Sound"
             >
-              {snap.muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+              {snap.muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
             </RoundButton>
           </div>
 
-          {snap.best > 0 && (
-            <div className="anim-pop-in-d2 absolute bottom-6">
-              <Sticker tone="gold">
-                <Trophy size={11} /> best {snap.best} m
-              </Sticker>
+          <div className="absolute inset-x-0 top-3 flex flex-col items-center sm:top-4">
+            <div className="rounded-2xl border border-[#e7ddc4]/80 bg-[#f6f0df]/82 px-5 py-2 text-center shadow-[0_8px_25px_-18px_rgba(50,67,53,0.55)] backdrop-blur-sm">
+              <div className="mb-1 text-[9px] font-extrabold uppercase tracking-[0.12em] text-[#879179]">
+                {THEME_DEFS[snap.theme].name}
+              </div>
+              <div className="font-display text-4xl font-extrabold leading-none text-[#405447] sm:text-5xl">
+                {snap.dist}<span className="ml-1 text-[11px] font-bold text-[#8a927b] sm:text-sm">m</span>
+              </div>
+              <div className="mt-1.5 flex items-center gap-2">
+                <div className="h-1.5 w-36 overflow-hidden rounded-full bg-[#d7d2bd] sm:w-48">
+                  <div
+                    className="h-full rounded-full bg-[#8da276] transition-[width] duration-200"
+                    style={{ width: `${progress * 100}%` }}
+                  />
+                </div>
+                <Flag size={12} className="text-[#92967c]" />
+                <span className="text-[9px] font-bold tracking-[0.06em] text-[#7f8974]">{snap.gateM} m</span>
+              </div>
+            </div>
+            {snap.missed && (
+              <div className="mt-1 rounded-full bg-[#f4edda]/75 px-3 py-1 text-[9px] font-bold text-[#8c8061]">
+                Next waymark · {snap.gateM} m
+              </div>
+            )}
+          </div>
+
+          <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5 sm:right-5 sm:top-5">
+            <div className="font-display flex items-center gap-1.5 rounded-full border border-[#e7ddc4]/80 bg-[#f6f0df]/82 px-3.5 py-2 text-sm font-extrabold text-[#987b4b] shadow-[0_8px_25px_-18px_rgba(50,67,53,0.55)] backdrop-blur-sm">
+              <Leaf size={14} /> {snap.coins}
+            </div>
+            {snap.tricks > 0 && (
+              <div className="rounded-full border border-[#e7ddc4]/80 bg-[#f6f0df]/75 px-3 py-1 text-[9px] font-bold text-[#8a705b]">
+                {snap.tricks} {snap.tricks === 1 ? "turn" : "turns"}
+              </div>
+            )}
+            {snap.gliding && (
+              <div className="rounded-full border border-[#d4e0ce] bg-[#edf1df]/88 px-3 py-1 text-[9px] font-bold text-[#68826f]">
+                breeze
+              </div>
+            )}
+          </div>
+
+          {/* Small, symmetric tuck controls for touch. */}
+          <div className="pointer-events-auto absolute bottom-5 left-4 flex items-end gap-2 sm:bottom-6 sm:left-6">
+            <button
+              aria-label="Spin counterclockwise"
+              title="Tuck left (A / ←)"
+              className={`flex h-12 w-12 select-none items-center justify-center rounded-full border border-[#d7cdb5] bg-[#f6f0df]/82 text-[#65755d] shadow-[0_5px_18px_-12px_rgba(50,67,53,0.55)] transition active:scale-95 ${snap.state !== "playing" ? "opacity-50" : ""}`}
+              {...holdPointer((down) => gameRef.current?.setTrick(down ? -1 : 0))}
+            >
+              <RotateCcw size={18} />
+            </button>
+            <button
+              aria-label="Spin clockwise"
+              title="Tuck right (D / →)"
+              className={`flex h-12 w-12 select-none items-center justify-center rounded-full border border-[#d7cdb5] bg-[#f6f0df]/82 text-[#65755d] shadow-[0_5px_18px_-12px_rgba(50,67,53,0.55)] transition active:scale-95 ${snap.state !== "playing" ? "opacity-50" : ""}`}
+              {...holdPointer((down) => gameRef.current?.setTrick(down ? 1 : 0))}
+            >
+              <RotateCw size={18} />
+            </button>
+            <span className="mb-1 text-[9px] font-bold tracking-[0.08em] text-[#65745f]/70">TUCK</span>
+          </div>
+
+          <div className="pointer-events-auto absolute bottom-5 right-4 flex flex-col items-center sm:bottom-6 sm:right-6">
+            <button
+              aria-label="Glide"
+              title="Hold to glide (Shift)"
+              className={`font-display flex h-[62px] w-[62px] select-none flex-col items-center justify-center gap-0.5 rounded-full border text-[9px] font-extrabold tracking-[0.1em] shadow-[0_5px_18px_-12px_rgba(50,67,53,0.55)] transition active:scale-95 ${
+                snap.gliding
+                  ? "border-[#718d79] bg-[#718d79] text-[#fff8e7]"
+                  : "border-[#d7cdb5] bg-[#f6f0df]/84 text-[#65755d]"
+              }`}
+              {...holdPointer((down) => gameRef.current?.setGlide(down))}
+            >
+              <Wind size={19} />
+              GLIDE
+            </button>
+          </div>
+
+          {snap.tip && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-[88px] flex justify-center px-3 sm:bottom-[94px]">
+              <div className="anim-pop-in flex max-w-sm items-start gap-2.5 rounded-2xl border border-[#ded4bb] bg-[#f7f1df]/92 px-4 py-3 shadow-[0_8px_28px_-20px_rgba(50,67,53,0.55)] backdrop-blur-sm">
+                <span className="mt-0.5 shrink-0 text-[#8a987b]">{snap.tip.tone === "danger" ? <Wind size={15} /> : <Leaf size={15} />}</span>
+                <div>
+                  <div className="font-display text-[12px] font-extrabold text-[#495d4e]">{snap.tip.title}</div>
+                  <div className="mt-0.5 text-[10px] font-semibold leading-snug text-[#69745f]">{snap.tip.text}</div>
+                </div>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* ============ PAUSE ============ */}
+      {/* ---------------- quiet world picker ---------------- */}
+      {snap.state === "menu" && !help && (
+        <div className="absolute inset-0 flex items-center justify-center px-4 py-5">
+          <Panel className="anim-pop-in relative w-full max-w-md px-6 py-7 text-center sm:px-8 sm:py-8">
+            <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e7e5cb] text-[#6d8b72]">
+              <Leaf size={25} />
+            </div>
+            <h1 className="font-display text-[56px] font-extrabold leading-[0.9] tracking-tight text-[#405447] sm:text-[68px]">
+              WEBBY<span className="text-[#bd7056]">!</span>
+            </h1>
+            <p className="mx-auto mt-3 max-w-xs text-[13px] font-semibold leading-relaxed text-[#72806d]">
+              A little endless journey on a springy web. Follow the breeze, gather seeds, and take your time.
+            </p>
+
+            <div className="mt-6 flex items-center justify-between gap-2 rounded-2xl border border-[#d8cfb8] bg-[#eee8d5]/80 p-2">
+              <RoundButton onClick={() => pickWorld(world - 1)} title="Previous landscape" ariaLabel="Previous world">
+                <ChevronLeft size={18} />
+              </RoundButton>
+              <div className="min-w-0 flex-1 px-1">
+                <div className="flex items-center justify-center gap-2">
+                  <WorldIcon size={18} className="shrink-0 text-[#7f9774]" />
+                  <span className="font-display truncate text-lg font-extrabold text-[#465b4c] sm:text-xl">{worldName}</span>
+                </div>
+                <div className="mt-1 text-[9px] font-bold tracking-[0.08em] text-[#8a907a]">{worldTag}</div>
+                {!worldUnlocked && <div className="mt-1 text-[9px] font-semibold text-[#ae8962]">Reach it on your trail to open it</div>}
+              </div>
+              <RoundButton onClick={() => pickWorld(world + 1)} title="Next landscape" ariaLabel="Next world">
+                <ChevronRight size={18} />
+              </RoundButton>
+            </div>
+
+            <div className="mt-3 flex items-center justify-center gap-1.5" aria-label="Landscape progress">
+              {WORLDS.map((level, i) => {
+                const available = snap.unlocked >= level;
+                return (
+                  <span
+                    key={level}
+                    className={`h-1.5 rounded-full transition-all ${i === world ? "w-7" : "w-3"}`}
+                    style={{ background: i === world ? "#718c70" : available ? "#a4b295" : "#d4ceb9" }}
+                  />
+                );
+              })}
+            </div>
+
+            <ChunkyButton
+              tone="primary"
+              size="lg"
+              ariaLabel="Play"
+              onClick={playSelected}
+              className="mt-5 w-full"
+            >
+              <Play size={17} className="fill-current" />
+              {snap.best > 0 ? "Continue the journey" : "Begin wandering"}
+            </ChunkyButton>
+
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <ChunkyButton tone="ghost" size="sm" onClick={() => setHelp(true)}>
+                <HelpCircle size={14} /> Field guide
+              </ChunkyButton>
+              <RoundButton
+                onClick={() => gameRef.current?.toggleMute()}
+                title="Sound (M)"
+                ariaLabel="Sound"
+              >
+                {snap.muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              </RoundButton>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-[9px] font-bold text-[#8b927c]">
+              <span className="rounded-full bg-[#ece6d2] px-2.5 py-1">8 landscapes</span>
+              <span className="rounded-full bg-[#ece6d2] px-2.5 py-1">endless waymarks</span>
+              <span className="rounded-full bg-[#ece6d2] px-2.5 py-1">{openedWorlds}/8 opened</span>
+            </div>
+            {snap.best > 0 && (
+              <div className="mt-3 flex justify-center">
+                <Sticker tone="gold"><Trophy size={11} /> longest trail · {snap.best} m</Sticker>
+              </div>
+            )}
+          </Panel>
+        </div>
+      )}
+
+      {/* ---------------- pause ---------------- */}
       {snap.state === "paused" && !help && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[#05070f]/60 px-6 backdrop-blur-sm">
+        <div className="absolute inset-0 flex items-center justify-center bg-[#485b4b]/20 px-5 backdrop-blur-sm">
           <Panel className="anim-pop-in w-full max-w-xs p-6 text-center">
-            <h2 className="font-display text-3xl font-extrabold text-white">PAUSED</h2>
-            <p className="mt-1.5 text-[11px] font-semibold text-white/40">
-              level {snap.level + 1} · {snap.dist}/{gateM} m · {snap.coins} coins
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#879078]">Take a breath</p>
+            <h2 className="font-display mt-1 text-3xl font-extrabold text-[#465b4c]">Paused</h2>
+            <p className="mt-2 text-[11px] font-semibold text-[#7c8771]">
+              {snap.dist} m · {snap.coins} seeds · {snap.tricks} turns
             </p>
             <div className="mt-5 flex flex-col gap-2.5">
               <ChunkyButton tone="primary" size="md" onClick={() => gameRef.current?.resume()}>
-                <Play size={14} className="fill-current" />
-                Resume
+                <Play size={14} className="fill-current" /> Keep wandering
               </ChunkyButton>
               <ChunkyButton tone="dark" size="md" onClick={() => gameRef.current?.start()}>
-                <RotateCcw size={14} />
-                Restart
+                <RotateCcw size={14} /> Start this trail again
               </ChunkyButton>
               <div className="flex gap-2.5">
                 <ChunkyButton tone="ghost" size="sm" className="flex-1" onClick={() => setHelp(true)}>
-                  <HelpCircle size={12} />
-                  Help
+                  <HelpCircle size={12} /> Field guide
                 </ChunkyButton>
                 <ChunkyButton tone="ghost" size="sm" className="flex-1" onClick={() => gameRef.current?.toMenu()}>
-                  <Home size={12} />
-                  Menu
+                  <Home size={12} /> Landscapes
                 </ChunkyButton>
               </div>
             </div>
@@ -496,111 +380,46 @@ export default function GameScreen() {
         </div>
       )}
 
-      {/* ============ LEVEL CLEAR ============ */}
+      {/* ---------------- waymark reached ---------------- */}
       {snap.state === "levelup" && !help && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
-          <div className="flex w-full max-w-xs flex-col items-center text-center">
-            <h2 className="anim-pop-in font-display text-4xl font-extrabold leading-none text-white">
-              LEVEL {snap.level + 1} CLEAR
-            </h2>
-            <Panel className="anim-pop-in-d1 mt-4 w-full px-5 py-4">
-              <div className="font-display text-lg font-bold text-white/85">
-                {gateM} m · {snap.coins} coins
-              </div>
-              <div className="mt-2.5 text-[10px] font-bold uppercase tracking-[0.2em] text-white/35">
-                {Math.floor(snap.level / LEVELS_PER_WORLD) ===
-                Math.floor((snap.level + 1) / LEVELS_PER_WORLD)
-                  ? "next stretch"
-                  : "next world"}
-              </div>
-              <div
-                className="font-display mt-1 text-2xl font-extrabold"
-                style={{ color: THEME_DEFS[themeForLevel(snap.level + 1)].trim }}
-              >
-                {THEME_DEFS[themeForLevel(snap.level + 1)].name}
-              </div>
-            </Panel>
-            <p className="anim-pulse-soft font-display mt-3.5 text-[10px] font-bold uppercase tracking-[0.28em] text-white/35">
-              progress saved
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* ============ DEATH ============ */}
-      {snap.state === "dead" && !help && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#05070f]/50 px-6 backdrop-blur-[2px]">
-          <div className="flex w-full max-w-xs flex-col items-center text-center">
-            <h2 className="anim-pop-in font-display text-5xl font-extrabold leading-none text-[#e8465f]">
-              SPLAT!
-            </h2>
-            <p className="anim-pop-in mt-2 text-[11px] font-bold uppercase tracking-[0.16em] text-white/35">
-              {causeText[snap.cause] ?? "end of the line"}
-            </p>
-
-            {snap.newBest && (
-              <div className="anim-pop-in mt-3">
-                <Sticker tone="gold">
-                  <Trophy size={11} /> new best
-                </Sticker>
-              </div>
-            )}
-
-            <Panel className="anim-pop-in-d1 mt-4 w-full px-5 py-4">
-              <div className="font-display text-5xl font-extrabold leading-none text-white">
-                {snap.dist}
-                <span className="ml-1 text-base font-bold text-white/30">
-                  /{gateM} m
-                </span>
-              </div>
-              <div className="font-display mt-2 text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">
-                level {snap.level + 1} · {theme.name}
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2 border-t border-white/10 pt-3.5">
-                <div>
-                  <Trophy size={13} className="mx-auto text-[#e8b64a]" />
-                  <div className="font-display mt-1 text-base font-bold text-white/90">
-                    {snap.best}
-                  </div>
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-white/30">best</div>
-                </div>
-                <div>
-                  <Coins size={13} className="mx-auto text-[#e8b64a]" />
-                  <div className="font-display mt-1 text-base font-bold text-white/90">
-                    {snap.coins}
-                  </div>
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-white/30">coins</div>
-                </div>
-                <div>
-                  <Gauge size={13} className="mx-auto text-[#5cc8ea]" />
-                  <div className="font-display mt-1 text-base font-bold text-white/90">
-                    {Math.round(snap.maxSpeed / 10)}
-                  </div>
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-white/30">km/h</div>
-                </div>
-              </div>
-            </Panel>
-
-            <div className="anim-pop-in-d2 pointer-events-auto mt-4 flex items-center gap-2.5">
-              <ChunkyButton tone="primary" size="lg" onClick={() => gameRef.current?.start()}>
-                <RotateCcw size={15} strokeWidth={2.4} />
-                Fly again
-              </ChunkyButton>
-              <RoundButton onClick={() => gameRef.current?.toMenu()} title="Menu" ariaLabel="Menu">
-                <Home size={15} />
-              </RoundButton>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-5">
+          <Panel className="anim-pop-in w-full max-w-xs px-6 py-5 text-center">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#e7e5cb] text-[#788d6c]"><Flag size={19} /></div>
+            <h2 className="font-display mt-3 text-2xl font-extrabold text-[#465b4c]">Waymark reached</h2>
+            <p className="mt-1 text-xs font-semibold text-[#7d8872]">{snap.dist} m · {snap.coins} seeds collected</p>
+            <div className="mt-4 rounded-xl bg-[#eee8d5] px-4 py-3">
+              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#96937b]">A new trail ahead</p>
+              <p className="font-display mt-1 text-lg font-extrabold text-[#6b866f]">{THEME_DEFS[themeForLevel(snap.level + 1)].name}</p>
             </div>
-            <p className="anim-pop-in-d2 mt-3 text-[10px] font-bold uppercase tracking-[0.22em] text-white/20">
-              tap anywhere · R
-            </p>
-          </div>
+          </Panel>
         </div>
       )}
 
-      {/* ============ CALLOUTS ============ */}
+      {/* ---------------- journey paused ---------------- */}
+      {snap.state === "dead" && !help && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#485b4b]/18 px-5 backdrop-blur-[2px]">
+          <Panel className="anim-pop-in w-full max-w-xs px-6 py-6 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#e8dfc8] text-[#b8795d]"><Leaf size={23} /></div>
+            <h2 className="font-display mt-3 text-3xl font-extrabold text-[#465b4c]">Rest here</h2>
+            <p className="mt-1 text-[11px] font-semibold text-[#8a8977]">{causeText[snap.cause] ?? "the trail came to a pause"}</p>
+            {snap.newBest && <div className="mt-3"><Sticker tone="gold"><Trophy size={11} /> a new longest trail</Sticker></div>}
+            <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-[#eee8d5] p-3">
+              <div><div className="font-display text-lg font-extrabold text-[#465b4c]">{snap.dist}</div><div className="text-[9px] font-bold text-[#8e927d]">metres</div></div>
+              <div><div className="font-display text-lg font-extrabold text-[#987b4b]">{snap.coins}</div><div className="text-[9px] font-bold text-[#8e927d]">seeds</div></div>
+              <div><div className="font-display text-lg font-extrabold text-[#8a705b]">{snap.tricks}</div><div className="text-[9px] font-bold text-[#8e927d]">turns</div></div>
+            </div>
+            <div className="pointer-events-auto mt-4 flex justify-center gap-2.5">
+              <ChunkyButton tone="primary" size="md" onClick={() => gameRef.current?.start()}>
+                <RotateCcw size={14} /> Wander again
+              </ChunkyButton>
+              <RoundButton onClick={() => gameRef.current?.toMenu()} title="Landscapes" ariaLabel="Menu"><Home size={15} /></RoundButton>
+            </div>
+          </Panel>
+        </div>
+      )}
+
       {snap.announce && !help && <AnnounceOverlay data={snap.announce} />}
 
-      {/* ============ HOW TO PLAY ============ */}
       {help && (
         <HowToPlay
           onClose={() => setHelp(false)}

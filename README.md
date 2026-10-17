@@ -1,89 +1,66 @@
-# WEBBY! — 2D Web Swinging Physics Game
+# WEBBY!
 
-2D-игра с физикой раскачивания на паутине: держи кнопку — паук цепляется за
-ближайший выступ, отпусти — летишь. React + TypeScript + Vite + Canvas 2D.
+A calm 2D web-swinging game about timing, balance, and finding a comfortable rhythm. Catch a branch with a springy silk line, let go with your momentum, and wander through an endless sequence of hand-coloured landscapes.
 
-## Запуск
+Built with React, TypeScript, Vite, Tailwind CSS, and Canvas 2D.
+
+## Run locally
 
 ```bash
-npm install
-npm run dev      # http://localhost:5173
-npm run build    # single-file сборка в dist/index.html
+npm ci
+npm run dev       # Vite preview on port 5173
+npm run build     # single-file production build in dist/index.html
 ```
 
-## Как играть
+## Controls
 
-| Действие | Управление |
-| --- | --- |
-| Зарядить/держать паутину | `SPACE`, клик/тап по экрану |
-| Отпустить и полететь | отпустить кнопку (в верхней точке дуги — «PERFECT») |
-| Планирование веб-крыльями | `SHIFT`, `G`, `↓` или кнопка GLIDE |
-| Пауза / рестарт / звук | `P` / `R` / `M` |
+| Action | Keyboard | Touch / pointer |
+| --- | --- | --- |
+| Catch or hold a web | `Space` | Hold the playfield |
+| Release and drift | Release `Space` | Lift your finger |
+| Glide and soften a fall | `Shift`, `G`, or `↓` | Hold **Glide** |
+| Tuck into a turn | `A` / `←` or `D` / `→` | Hold either turn button |
+| Pause / fresh start / sound | `P` or `Esc` / `R` / `M` | On-screen buttons |
 
-## Уровни и мир
+A caught line stretches slightly and returns a little spring; it does not snap the spider forward with an artificial launch. In the air, turns build angular momentum in the chosen direction and coast down when the input is released.
 
-- Уровень = **250 метров**. В конце отрезка в асфальте открывается **люк-портал**:
-  нужно нырнуть в него. Промахнулся — следующий люк через 250 м, ничего не теряется.
-- После портала уровень повышается, а мир меняется: **неоновый город, джунгли,
-  подводная впадина, пустынный каньон, ледник, вулкан, орбита, неоновый квартал**
-  (40 уровней = 8 миров × 5 кругов).
-- **Тема одна на мир**: пять кругов одного мира идут в одной палитре (в меню это
-  пять одинаковых «отрезков» мира), поэтому смена картинки всегда = смена мира.
-- Прогресс сохраняется в `localStorage`; в меню можно выбрать любой открытый мир
-  и стартовать именно с него.
-- В каждом мире свои опасности и украшения: горящие крыши, рыбы, дроны-охотники,
-  сосульки, кактусы, кристаллы, водоросли, амбиент (пузыри, снег, листья, искры).
+## The journey
 
-## Воздушные потоки
+- Pass through a wooden waymark every **250 m**. The arch is a real goal in the air, not a magnet. Miss it and the next one appears farther along.
+- Gather seed-leaves and complete somersaults. Seeds and turns carry across waymarks; your longest trail is remembered locally.
+- The route is endless. Each landscape lasts five waymarks, then the eight-landscape cycle repeats:
+  1. Mosslight Valley
+  2. Fernwood Canopy
+  3. Tidal Cove
+  4. Amber Dunes
+  5. Pine Snowfield
+  6. Autumn Orchard
+  7. Cloudbreak Peaks
+  8. Seabreeze Coast
+- Terrain rolls gently rather than dropping into abrupt pits. The opening is quiet; hanging hazards do not appear in the first ten chunks and remain rare afterward. Wildlife is scenery, and speed rings and the old neon-city clutter are gone.
 
-Потоки — это честное сопротивление: внутри зоны скорость тела подтягивается к
-вектору потока (в ядре за ~0.2 с), и воздух снимает часть веса. Потоков никогда
-не бывает больше одного в чанке и никогда в двух чанках подряд — они физически не
-могут наложиться друг на друга.
+## Regression tools
 
-## Страховки от «дальше не допрыгнуть»
-
-- Генератор гарантирует, что **до ближайшего выступа/паутинной капсулы всегда
-  ≤ 300 px** (в среднем ~60 px).
-- Паутинные капсулы (web pods) висят в разрывах, где нет крыш.
-- Автоприцел оценивает не только угол и длину, но и всю дугу: если маятник
-  цепляет шип, дрон или упирается в асфальт — вариант отбрасывается.
-- Страховка-подтяжка: паук сам подтягивает нить, когда низ дуги почти касается улицы.
-- Через каждые 250 м — восходящий поток, а в разрывах — ускоряющее кольцо.
-
-## Физика
-
-Ядро раскачивания не менялось ни на пиксель: констрейнт маятника, «пампинг»
-(`PUMP`, `REEL`) и спул верёвки идентичны первой версии — это проверяется
-автотестом `tools/ab.ts` (сравнение с движком из исходного коммита: нулевой дрейф).
-
-## Инструменты для отладки
+The headless tools are TypeScript sources in `tools/`. Rebuild their ignored local bundles after source changes:
 
 ```bash
 for t in sim gaps mechanics ab lazy; do
   npx esbuild tools/$t.ts --bundle --format=cjs --platform=node --outfile=tools/$t.cjs
 done
-node tools/sim.cjs 1 2 3        # прогон бота по уровням (headless)
-node tools/gaps.cjs             # проверка достижимости выступов
-node tools/mechanics.cjs        # 18 проверок: потоки, огонь, люки, миры
-node tools/ab.cjs               # физика верёвки против исходной версии
-node tools/lazy.cjs 1           # зажать кнопку и никогда не отпускать
-```
-
-```bash
 for t in e2e perf spike; do
   npx esbuild tools/$t.ts --bundle --format=esm --platform=node \
     --outfile=tools/$t.mjs --external:jsdom --external:@napi-rs/canvas
 done
-node tools/e2e.mjs              # UI целиком: 23 проверки (меню, HUD, пауза, мир)
-node tools/perf.mjs             # цена кадра (avg/p95/max) по уровням
-node tools/spike.mjs            # какой шаг рендера «залипает»
 ```
 
-`tools/` — headless-заглушки DOM и скриптовый «игрок», которым проверялась
-физика, достижимость выступов и прохождение порталов; в продакшн-сборку не входит.
-`tools/shot.ts` / `tools/spidershot.ts` рисуют кадры в PNG, `tools/e2e.ts` монтирует
-настоящее React-приложение в jsdom (оба варианта требуют
-`npm i @napi-rs/canvas jsdom` в отдельной папке и симлинк `tools/node_modules`).
-Фон (три слоя силуэтов города) запекается в offscreen-канвасы и переносится
-`drawImage`, поэтому на кадр остаётся ~50 вызовов вместо нескольких тысяч.
+Then run the physics, progression, and generation checks:
+
+```bash
+node tools/mechanics.cjs      # endless route, spring tether, tricks, terrain, wildlife
+node tools/ab.cjs              # expected contrast: rigid baseline vs bounded spring web
+node tools/gaps.cjs            # anchor reachability across generated chunks
+node tools/sim.cjs SAFE        # scripted route through the eight starting landscapes
+node tools/lazy.cjs 1          # diagnostic: holding the web without timing releases
+```
+
+The browser-style UI test is `tools/e2e.ts`; it needs `jsdom` and `@napi-rs/canvas` available to Node. `tools/orig/` preserves the original physics baseline for the A/B comparison.
