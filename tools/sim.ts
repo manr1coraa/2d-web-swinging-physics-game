@@ -37,6 +37,10 @@ function play(level: number, maxSeconds = 120, aggressive = true): Result {
     frames++;
     botStep(game, bot, aggressive);
     cb(t);
+    if (process.env.TRACE_SIM === "1" && frames % 300 === 0) {
+      const p = game.player;
+      console.log(`   t=${(frames / 60).toFixed(0)}s x=${p.x.toFixed(0)} y=${p.y.toFixed(0)} v=${p.speed().toFixed(0)} attached=${p.attached ? 1 : 0} glide=${game.gliding ? 1 : 0} aim=${game.aim ? Math.round(game.aim.x) : "none"} gate=${game.gateHole?.x ?? "none"}`);
+    }
     if (game.state === "levelup") {
       cleared = true;
       if (!campaign) break;
@@ -49,9 +53,13 @@ function play(level: number, maxSeconds = 120, aggressive = true): Result {
         cb2(t);
       }
       if (game.state === "playing" && game.level > startLevel) {
-        transitions.push(`level ${game.level + 1} (${game.theme})`);
+        transitions.push(`waymark ${game.level + 1} (${game.theme})`);
         startLevel = game.level;
         cleared = false;
+        bot.holding = false;
+        bot.gliding = false;
+        watchdogX = Math.round(game.player.x / 40);
+        stuckFrames = 0;
       } else if (logFrames) {
         logFrames = false;
       }

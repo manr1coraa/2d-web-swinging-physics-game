@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** tactile button with a solid bottom edge — flat colours, no gradients */
+/** Soft, tactile buttons that fit the paper-and-brick art direction. */
 export function ChunkyButton({
   children,
   onClick,
@@ -18,11 +18,11 @@ export function ChunkyButton({
 }) {
   const tones = {
     primary:
-      "bg-[#e8465f] text-white border-[#8f1f33] shadow-[0_4px_0_0_#8f1f33] hover:bg-[#f4576f]",
-    gold: "bg-[#e8b64a] text-[#2e1f00] border-[#8f6a12] shadow-[0_4px_0_0_#8f6a12] hover:bg-[#f0c45f]",
-    dark: "bg-[#1c2340] text-white/90 border-[#0c1024] shadow-[0_4px_0_0_#0c1024] hover:bg-[#232b4c]",
+      "bg-[#b4574b] text-[#fff5ea] border-[#8b3f37] shadow-[0_3px_0_0_#8b3f37] hover:bg-[#c26558]",
+    gold: "bg-[#d4ae6b] text-[#403726] border-[#ad8952] shadow-[0_3px_0_0_#ad8952] hover:bg-[#dfbd7d]",
+    dark: "bg-[#e6dfc8] text-[#405447] border-[#c7bfa7] shadow-[0_3px_0_0_#c7bfa7] hover:bg-[#eee8d4]",
     ghost:
-      "bg-white/6 text-white/70 border-white/10 shadow-[0_3px_0_0_rgba(255,255,255,0.06)] hover:bg-white/12 hover:text-white",
+      "bg-[#f6f0dd]/65 text-[#556754] border-[#d3cbb2] shadow-[0_2px_0_0_rgba(91,100,72,0.12)] hover:bg-[#f8f3e5]",
   };
   const sizes = {
     sm: "px-3.5 py-2 text-[11px] gap-1.5",
@@ -33,14 +33,14 @@ export function ChunkyButton({
     <button
       onClick={onClick}
       aria-label={ariaLabel}
-      className={`font-display inline-flex items-center justify-center rounded-xl border-b font-bold uppercase tracking-[0.12em] transition-all duration-100 active:translate-y-[4px] active:shadow-none ${tones[tone]} ${sizes[size]} ${className}`}
+      className={`font-display inline-flex items-center justify-center rounded-xl border font-bold tracking-[0.08em] transition-all duration-150 active:translate-y-[2px] active:shadow-none ${tones[tone]} ${sizes[size]} ${className}`}
     >
       {children}
     </button>
   );
 }
 
-/** round icon button */
+/** Light, quiet icon button for the small in-game controls. */
 export function RoundButton({
   children,
   onClick,
@@ -59,10 +59,10 @@ export function RoundButton({
       onClick={onClick}
       title={title}
       aria-label={ariaLabel}
-      className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors duration-100 ${
+      className={`flex h-10 w-10 items-center justify-center rounded-full border transition-colors duration-150 ${
         active
-          ? "border-[#e8465f]/60 bg-[#e8465f] text-white"
-          : "border-white/10 bg-[#12172c]/80 text-white/60 hover:bg-[#1b2138] hover:text-white"
+          ? "border-[#a2564b] bg-[#b4574b] text-[#fff5ea]"
+          : "border-[#d4ceb8] bg-[#f5efdd]/85 text-[#4c5c60] hover:bg-[#fff8e7] hover:text-[#2f4247]"
       }`}
     >
       {children}
@@ -70,7 +70,7 @@ export function RoundButton({
   );
 }
 
-/** soft panel card — flat, quiet */
+/** A paper-coloured panel with a soft, wide shadow. */
 export function Panel({
   children,
   className = "",
@@ -80,14 +80,14 @@ export function Panel({
 }) {
   return (
     <div
-      className={`rounded-2xl border border-white/10 bg-[#12172c]/95 shadow-[0_18px_50px_-20px_rgba(0,0,0,0.9)] backdrop-blur-md ${className}`}
+      className={`rounded-3xl border border-[#d4cbb2] bg-[#f5efdd]/95 text-[#435447] shadow-[0_18px_50px_-24px_rgba(50,61,48,0.42)] backdrop-blur-md ${className}`}
     >
       {children}
     </div>
   );
 }
 
-/** small label chip */
+/** Small natural-colour label chip. */
 export function Sticker({
   children,
   tone = "gold",
@@ -98,13 +98,13 @@ export function Sticker({
   className?: string;
 }) {
   const tones = {
-    gold: "bg-[#e8b64a]/15 text-[#f0c45f] border-[#e8b64a]/30",
-    cyan: "bg-[#5cc8ea]/15 text-[#8fdcff] border-[#5cc8ea]/30",
-    coral: "bg-[#e8465f]/15 text-[#ff8b9d] border-[#e8465f]/30",
+    gold: "bg-[#d4ae6b]/22 text-[#725c37] border-[#c7a36a]/50",
+    cyan: "bg-[#8fbcb0]/22 text-[#4d7770] border-[#8fbcb0]/55",
+    coral: "bg-[#c27b63]/16 text-[#8b5847] border-[#c27b63]/40",
   };
   return (
     <span
-      className={`font-display inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] ${tones[tone]} ${className}`}
+      className={`font-display inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold tracking-[0.08em] ${tones[tone]} ${className}`}
     >
       {children}
     </span>

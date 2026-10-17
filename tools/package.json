@@ -1,0 +1,11 @@
+{
+  "name": "webby-tools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Headless simulators, bots and regression checks for WEBBY! (not part of the shipped app)",
+  "devDependencies": {
+    "@napi-rs/canvas": "^0.1.65",
+    "esbuild": "^0.25.0",
+    "jsdom": "^26.0.0"
+  }
+}

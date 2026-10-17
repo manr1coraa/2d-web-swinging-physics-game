@@ -7,16 +7,22 @@ const lv = parseInt(process.argv[2] ?? "3", 10) - 1;
 rafQueue.length = 0;
 const game = new Game(canvas as unknown as HTMLCanvasElement, () => {});
 game.start(lv);
+const deterministic = process.env.DETERMINISTIC === "1";
+if (deterministic) (game as unknown as { last: number }).last = 0;
 const bot = newBot();
-let t = performance.now();
+const aggressive = !process.argv.slice(3).some((arg) => arg.toUpperCase() === "SAFE");
+let t = deterministic ? 0 : performance.now();
 const ring: string[] = [];
 for (let f = 0; f < 60 * 60; f++) {
   const cb = rafQueue.shift();
   if (!cb) break;
   t += 1000 / 60;
-  botStep(game, bot);
+  botStep(game, bot, aggressive);
   cb(t);
   const p = game.player;
+  if (process.env.TRACE_SIM === "1" && f % 300 === 0) {
+    console.log(`   t=${(f / 60).toFixed(0)}s x=${p.x.toFixed(0)} y=${p.y.toFixed(0)} v=${p.speed().toFixed(0)} attached=${p.attached ? 1 : 0} glide=${game.gliding ? 1 : 0} aim=${game.aim ? Math.round(game.aim.x) : "none"} gate=${game.gateHole?.x ?? "none"}`);
+  }
   let near = "";
   game.world.eachNear(p.x + 260, (o) => {
     if (o.kind !== "spire") return;

@@ -1,213 +1,258 @@
-import type { ThemeId } from "./world";
+import type { DistrictId } from "./world";
 
 export interface Theme {
-  id: ThemeId;
+  id: DistrictId;
   name: string;
   tag: string;
   /** sky gradient, top → bottom */
   sky: [string, string, string, string];
-  glow: string; // horizon light pollution / bioluminescence
-  far1: string;
-  far2: string;
-  far3: string;
-  glass: "warm" | "cool" | "green" | "ice" | "neon" | "void";
-  /** ceiling / canopy mass */
-  ceiling: string;
-  trim: string;
-  /** street gradient, top → bottom */
-  ground: [string, string, string];
-  groundLine: string;
-  /** hazards */
-  spike: "city" | "vine" | "ice" | "cactus" | "crystal" | "rock" | "coral" | "bone";
-  spinner: "saw" | "jelly" | "copter";
-  /** ambient particles */
-  ambient: "none" | "bubbles" | "snow" | "leaves" | "embers" | "stars" | "dust" | "sparks";
-  ambientColor: string;
-  /** accent used for HUD-ish world glows */
+  /** warm light pooled near the horizon */
+  glow: string;
+  /** distant haze that swallows the far skyline */
+  haze: string;
+  /** three parallax silhouette layers, far → near */
+  far: [string, string, string];
+  /** three facade tones used by the buildings you actually land on */
+  wall: [string, string, string];
+  wallShade: string;
+  wallEdge: string;
+  /** roof deck + parapet cap */
+  roof: string;
+  roofLine: string;
+  /** unlit and lit windows */
+  window: string;
+  windowLit: string;
+  /** rooftop structures: chimneys, tanks, masts */
+  prop: string;
+  propDark: string;
+  propMetal: string;
+  /** awnings, banners, clotheslines */
   accent: string;
-  /** floating decorations drawn in the sky/water */
-  deco: "stars" | "kelp" | "skyline" | "cacti" | "pines" | "lavarocks" | "planets" | "billboards";
-  /** is there a "moon"/big body in the sky */
-  orb: "moon" | "sun" | "eclipse" | "none" | "sun2";
+  accent2: string;
+  /** the avenue far below */
+  street: string;
+  streetLine: string;
+  ambient: "none" | "birds" | "dust" | "leaves" | "snow";
+  ambientColor: string;
+  /** the little spider-person keeps the same suit everywhere, but the
+   * outline colour is picked up from the district so it always sits well */
+  ink: string;
 }
 
-export const THEME_DEFS: Record<ThemeId, Theme> = {
-  city: {
-    id: "city",
-    name: "Neon Skyline",
-    tag: "the classic",
-    sky: ["#070b22", "#121a3e", "#2b2254", "#5c3161"],
-    glow: "rgba(255,150,90,0.22)",
-    far1: "#121735",
-    far2: "#19204a",
-    far3: "#232a63",
-    glass: "warm",
-    ceiling: "#0b1024",
-    trim: "#49d8ff",
-    ground: ["#453049", "#241a33", "#0d0a1a"],
-    groundLine: "#ffd09a",
-    spike: "city",
-    spinner: "saw",
-    ambient: "none",
-    ambientColor: "rgba(214,206,255,0.5)",
-    accent: "#49d8ff",
-    deco: "skyline",
-    orb: "moon",
+/**
+ * Eight districts of the same hand-coloured city. Nothing here glows: the
+ * palettes are paper-and-brick, chosen so the rooftops read clearly against
+ * the sky at every height.
+ */
+export const THEME_DEFS: Record<DistrictId, Theme> = {
+  harbour: {
+    id: "harbour",
+    name: "Old Harbour",
+    tag: "first light · wet brick",
+    sky: ["#7ba7b4", "#a8c6c6", "#d8d9b8", "#f0dcb4"],
+    glow: "rgba(250,226,178,0.26)",
+    haze: "rgba(198,214,213,0.62)",
+    far: ["#a9c1c4", "#87a6ac", "#66898f"],
+    wall: ["#8d7f78", "#a08a7c", "#7b7268"],
+    wallShade: "rgba(46,58,60,0.30)",
+    wallEdge: "#c3b3a4",
+    roof: "#5f6b6a",
+    roofLine: "#dcd3bd",
+    window: "#4c5f63",
+    windowLit: "#f4dda6",
+    prop: "#7d6a5e",
+    propDark: "#4f4741",
+    propMetal: "#9aa3a1",
+    accent: "#c2785f",
+    accent2: "#8fa9a4",
+    street: "#4e5a5c",
+    streetLine: "#cfc6ad",
+    ambient: "birds",
+    ambientColor: "rgba(250,244,222,0.42)",
+    ink: "#33413f",
   },
-  jungle: {
-    id: "jungle",
-    name: "Jungle Canopy",
-    tag: "vines & humidity",
-    sky: ["#04140f", "#0a2a1c", "#14512f", "#3f7a35"],
-    glow: "rgba(180,255,120,0.18)",
-    far1: "#0b2418",
-    far2: "#123326",
-    far3: "#1c4a30",
-    glass: "green",
-    ceiling: "#06231a",
-    trim: "#8bff6a",
-    ground: ["#2c3a1c", "#1a2611", "#080d07"],
-    groundLine: "#c7f07a",
-    spike: "vine",
-    spinner: "jelly",
-    ambient: "leaves",
-    ambientColor: "rgba(180,240,120,0.55)",
-    accent: "#8bff6a",
-    deco: "kelp",
-    orb: "sun",
-  },
-  underwater: {
-    id: "underwater",
-    name: "Abyss Trench",
-    tag: "fish & bubbles",
-    sky: ["#02121f", "#04304a", "#075a72", "#0e8ba0"],
-    glow: "rgba(120,255,240,0.16)",
-    far1: "#062738",
-    far2: "#08374c",
-    far3: "#0b4a61",
-    glass: "ice",
-    ceiling: "#03202e",
-    trim: "#5ff5ff",
-    ground: ["#0d3a44", "#072630", "#020f16"],
-    groundLine: "#8ff0ff",
-    spike: "coral",
-    spinner: "jelly",
-    ambient: "bubbles",
-    ambientColor: "rgba(200,250,255,0.6)",
-    accent: "#5ff5ff",
-    deco: "kelp",
-    orb: "none",
-  },
-  desert: {
-    id: "desert",
-    name: "Canyon Dust",
-    tag: "sand & sun",
-    sky: ["#2a1320", "#5c2a2a", "#b4573a", "#e8a75c"],
-    glow: "rgba(255,200,120,0.3)",
-    far1: "#4a2430",
-    far2: "#65333a",
-    far3: "#8a4a44",
-    glass: "warm",
-    ceiling: "#3a2028",
-    trim: "#ffb163",
-    ground: ["#6b4326", "#402616", "#170d08"],
-    groundLine: "#ffcf8a",
-    spike: "cactus",
-    spinner: "copter",
+  brickline: {
+    id: "brickline",
+    name: "Brickline Quarter",
+    tag: "morning · red brick lanes",
+    sky: ["#7fa9ae", "#b2ccc0", "#e2dcb2", "#f3e0b8"],
+    glow: "rgba(250,229,180,0.22)",
+    haze: "rgba(206,214,203,0.58)",
+    far: ["#b3bfb2", "#93a194", "#717f76"],
+    wall: ["#a1705c", "#b07f65", "#8e6451"],
+    wallShade: "rgba(60,42,36,0.28)",
+    wallEdge: "#d8bda6",
+    roof: "#6c5a52",
+    roofLine: "#e7d8c0",
+    window: "#5a4a45",
+    windowLit: "#f6dfaa",
+    prop: "#8a6a58",
+    propDark: "#54403a",
+    propMetal: "#a49a90",
+    accent: "#cf9067",
+    accent2: "#8fa37f",
+    street: "#5b4f4a",
+    streetLine: "#e2d3ba",
     ambient: "dust",
-    ambientColor: "rgba(255,220,170,0.45)",
-    accent: "#ffb163",
-    deco: "cacti",
-    orb: "sun2",
+    ambientColor: "rgba(250,235,200,0.34)",
+    ink: "#3f3330",
   },
-  ice: {
-    id: "ice",
-    name: "Glacier Run",
-    tag: "ice & aurora",
-    sky: ["#04101f", "#0a2540", "#12607a", "#69d8d0"],
-    glow: "rgba(140,255,230,0.2)",
-    far1: "#0d2438",
-    far2: "#123349",
-    far3: "#1a4560",
-    glass: "ice",
-    ceiling: "#0a1d30",
-    trim: "#8ef4ff",
-    ground: ["#1a3348", "#0d1d2c", "#03080f"],
-    groundLine: "#c9f6ff",
-    spike: "ice",
-    spinner: "saw",
+  mosslight: {
+    id: "mosslight",
+    name: "Mosslight Row",
+    tag: "soft green roofs · quiet streets",
+    sky: ["#79ab9f", "#aecab2", "#dcdcae", "#eee0b6"],
+    glow: "rgba(244,230,176,0.2)",
+    haze: "rgba(198,214,198,0.6)",
+    far: ["#aec8ae", "#88a98d", "#5f8874"],
+    wall: ["#7f8a72", "#93a083", "#6f7a66"],
+    wallShade: "rgba(44,58,46,0.28)",
+    wallEdge: "#cdd4b8",
+    roof: "#5d7360",
+    roofLine: "#e4e2c2",
+    window: "#4d5f4f",
+    windowLit: "#f2e2a8",
+    prop: "#6f7a62",
+    propDark: "#464f41",
+    propMetal: "#9fae9c",
+    accent: "#b98b62",
+    accent2: "#7f9c78",
+    street: "#4f5c4f",
+    streetLine: "#dcd8bb",
+    ambient: "leaves",
+    ambientColor: "rgba(214,226,170,0.36)",
+    ink: "#37443a",
+  },
+  glassmarket: {
+    id: "glassmarket",
+    name: "Glassmarket",
+    tag: "midday · pale glass towers",
+    sky: ["#7fb0bd", "#b6d2d2", "#e0e2c6", "#f2e6c2"],
+    glow: "rgba(252,240,200,0.24)",
+    haze: "rgba(205,220,222,0.6)",
+    far: ["#b6cdd0", "#93b1b7", "#6f8f97"],
+    wall: ["#8b9aa2", "#9daeb4", "#7a8a93"],
+    wallShade: "rgba(46,62,70,0.26)",
+    wallEdge: "#d3dde0",
+    roof: "#63767d",
+    roofLine: "#e6e8d4",
+    window: "#54666e",
+    windowLit: "#eef3df",
+    prop: "#77878d",
+    propDark: "#4b585e",
+    propMetal: "#b0bcbe",
+    accent: "#a98b6d",
+    accent2: "#7d9aa4",
+    street: "#536269",
+    streetLine: "#dfe3d4",
+    ambient: "none",
+    ambientColor: "rgba(246,248,230,0.34)",
+    ink: "#33424a",
+  },
+  amberrow: {
+    id: "amberrow",
+    name: "Amber Row",
+    tag: "late afternoon · sandstone",
+    sky: ["#8ab1a6", "#c6cda4", "#efd6a0", "#e9b983"],
+    glow: "rgba(252,214,156,0.28)",
+    haze: "rgba(226,206,172,0.6)",
+    far: ["#d6c49c", "#bda87d", "#9b8260"],
+    wall: ["#c0a077", "#cbb085", "#ab8d68"],
+    wallShade: "rgba(84,62,40,0.26)",
+    wallEdge: "#eedcb8",
+    roof: "#8b7154",
+    roofLine: "#f0e0bc",
+    window: "#6d5a45",
+    windowLit: "#fbe3a4",
+    prop: "#a3845f",
+    propDark: "#6b5540",
+    propMetal: "#c2b093",
+    accent: "#c4795a",
+    accent2: "#a99463",
+    street: "#6d5b48",
+    streetLine: "#ecdcbc",
+    ambient: "dust",
+    ambientColor: "rgba(250,224,176,0.36)",
+    ink: "#4a3b2c",
+  },
+  pinewharf: {
+    id: "pinewharf",
+    name: "Pinewharf",
+    tag: "winter hush · snow on the ledges",
+    sky: ["#7fabb4", "#b3cdcd", "#dae0d4", "#f0e9d6"],
+    glow: "rgba(232,244,238,0.26)",
+    haze: "rgba(210,222,224,0.66)",
+    far: ["#c2d4d5", "#93aeb3", "#6d8b93"],
+    wall: ["#83918f", "#95a3a0", "#727f7e"],
+    wallShade: "rgba(46,60,64,0.26)",
+    wallEdge: "#dde3da",
+    roof: "#6a7a7c",
+    roofLine: "#f3f4ea",
+    window: "#525f63",
+    windowLit: "#f4e6b6",
+    prop: "#77837f",
+    propDark: "#4c5654",
+    propMetal: "#aab6b4",
+    accent: "#a9836d",
+    accent2: "#8aa3a6",
+    street: "#59666a",
+    streetLine: "#e7ebe0",
     ambient: "snow",
-    ambientColor: "rgba(230,250,255,0.7)",
-    accent: "#8ef4ff",
-    deco: "pines",
-    orb: "moon",
+    ambientColor: "rgba(250,250,238,0.5)",
+    ink: "#35423f",
   },
-  volcano: {
-    id: "volcano",
-    name: "Volcano Rim",
-    tag: "ash & fire",
-    sky: ["#13060a", "#33101a", "#6b1f1c", "#c4531f"],
-    glow: "rgba(255,120,60,0.32)",
-    far1: "#2a1119",
-    far2: "#3d1a1f",
-    far3: "#5c2a24",
-    glass: "warm",
-    ceiling: "#1c0c12",
-    trim: "#ff8a3d",
-    ground: ["#4d1b16", "#2a0e0d", "#0d0405"],
-    groundLine: "#ffb066",
-    spike: "rock",
-    spinner: "saw",
-    ambient: "embers",
-    ambientColor: "rgba(255,150,70,0.75)",
-    accent: "#ff8a3d",
-    deco: "lavarocks",
-    orb: "eclipse",
+  cloudbreak: {
+    id: "cloudbreak",
+    name: "Cloudbreak Heights",
+    tag: "tall towers · open sky",
+    sky: ["#83b3c0", "#b9cfc9", "#e4e0bb", "#f4e0ae"],
+    glow: "rgba(248,234,186,0.24)",
+    haze: "rgba(214,226,224,0.72)",
+    far: ["#c6d6d2", "#9fbcb8", "#789a99"],
+    wall: ["#93a0a4", "#a5b1b2", "#828f93"],
+    wallShade: "rgba(52,66,72,0.24)",
+    wallEdge: "#dfe5dc",
+    roof: "#6b7c80",
+    roofLine: "#eef0de",
+    window: "#57676d",
+    windowLit: "#f6ecc2",
+    prop: "#7e8b8c",
+    propDark: "#515c5e",
+    propMetal: "#b6c0be",
+    accent: "#b48a68",
+    accent2: "#8ba3a8",
+    street: "#5a676c",
+    streetLine: "#e9ecdf",
+    ambient: "birds",
+    ambientColor: "rgba(252,248,226,0.4)",
+    ink: "#37464a",
   },
-  space: {
-    id: "space",
-    name: "Orbital Drift",
-    tag: "zero-g city",
-    sky: ["#01010a", "#070420", "#140a3a", "#2a1060"],
-    glow: "rgba(150,120,255,0.2)",
-    far1: "#0b0a24",
-    far2: "#151038",
-    far3: "#221a52",
-    glass: "void",
-    ceiling: "#080722",
-    trim: "#b18cff",
-    ground: ["#1a1440", "#0d0a26", "#03020c"],
-    groundLine: "#c9b6ff",
-    spike: "crystal",
-    spinner: "copter",
-    ambient: "stars",
-    ambientColor: "rgba(230,225,255,0.8)",
-    accent: "#b18cff",
-    deco: "planets",
-    orb: "none",
-  },
-  neon: {
-    id: "neon",
-    name: "Neon District",
-    tag: "synth & chrome",
-    sky: ["#0a0418", "#20073a", "#4b0c5c", "#9b1e73"],
-    glow: "rgba(255,90,220,0.24)",
-    far1: "#1b0a34",
-    far2: "#2c0f4c",
-    far3: "#431a66",
-    glass: "neon",
-    ceiling: "#120626",
-    trim: "#ff5ad6",
-    ground: ["#3a0f43", "#20082b", "#08010f"],
-    groundLine: "#ffa8ec",
-    spike: "city",
-    spinner: "saw",
-    ambient: "sparks",
-    ambientColor: "rgba(255,140,240,0.7)",
-    accent: "#ff5ad6",
-    deco: "billboards",
-    orb: "moon",
+  seabreeze: {
+    id: "seabreeze",
+    name: "Seabreeze Coast",
+    tag: "evening by the water · salt air",
+    sky: ["#7499a8", "#a4bcb6", "#dcc7a2", "#e0a982"],
+    glow: "rgba(246,204,150,0.28)",
+    haze: "rgba(214,204,186,0.62)",
+    far: ["#b9c9bc", "#8fa9a3", "#67857f"],
+    wall: ["#8b8579", "#9c9484", "#7a746a"],
+    wallShade: "rgba(50,54,54,0.3)",
+    wallEdge: "#d6cdb6",
+    roof: "#616a68",
+    roofLine: "#e9dfc4",
+    window: "#4f5a5c",
+    windowLit: "#f7dda4",
+    prop: "#7c7466",
+    propDark: "#4d4a42",
+    propMetal: "#a2a49a",
+    accent: "#c07a5e",
+    accent2: "#89a29a",
+    street: "#4f585a",
+    streetLine: "#e3d8bd",
+    ambient: "dust",
+    ambientColor: "rgba(248,226,186,0.34)",
+    ink: "#333d3d",
   },
 };
 
-export const themeDef = (id: ThemeId): Theme => THEME_DEFS[id];
+export const themeDef = (id: DistrictId): Theme => THEME_DEFS[id];

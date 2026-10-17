@@ -56,12 +56,15 @@ export class Sfx {
     }
   }
 
-  setMuted(m: boolean) {
+  /** `persist` is false when the save file already owns this setting */
+  setMuted(m: boolean, persist = true) {
     this.muted = m;
-    try {
-      localStorage.setItem("pauchok_muted", m ? "1" : "0");
-    } catch {
-      /* ignore */
+    if (persist) {
+      try {
+        localStorage.setItem("pauchok_muted", m ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
     }
     if (this.master && this.ctx)
       this.master.gain.setValueAtTime(m ? 0 : 0.55, this.ctx.currentTime);
@@ -135,6 +138,30 @@ export class Sfx {
     this.noise(0.16, 0.07, 900, "bandpass");
   }
 
+  /** leaving a roof under your own power */
+  jump() {
+    this.tone(300, 620, 0.1, "triangle", 0.1);
+    this.noise(0.07, 0.05, 2200, "bandpass");
+  }
+
+  /** feet or a hand meeting a roof — pitch and body follow the impact */
+  land(impact = 300) {
+    const k = Math.min(1.4, 0.6 + impact / 620);
+    this.tone(150 * k, 62, 0.11, "sine", Math.min(0.2, 0.07 + impact / 5200));
+    this.noise(0.09, Math.min(0.14, 0.04 + impact / 9000), 700, "lowpass");
+  }
+
+  /** a light footfall while running a roof */
+  step() {
+    this.noise(0.045, 0.028, 1500, "bandpass");
+  }
+
+  /** a hard hit on brick or steel that did not end the run */
+  crash() {
+    this.tone(180, 70, 0.18, "square", 0.13);
+    this.noise(0.2, 0.14, 900, "lowpass");
+  }
+
   /** miss click */
   tick() {
     this.tone(320, 240, 0.05, "triangle", 0.06);
@@ -162,26 +189,18 @@ export class Sfx {
     this.tone(587, 587, 0.14, "triangle", 0.12, 0.09);
   }
 
-  /** boost ring hit — rising sweep */
-  boost() {
-    this.tone(280, 1150, 0.28, "sawtooth", 0.12);
-    this.tone(560, 1700, 0.34, "sine", 0.1, 0.03);
-    this.noise(0.26, 0.1, 1600, "bandpass");
-  }
-
   shieldUp() {
     this.tone(760, 760, 0.08, "sine", 0.12);
     this.tone(1140, 1140, 0.18, "sine", 0.1, 0.06);
   }
 
   shieldBreak() {
-    this.tone(420, 80, 0.32, "sawtooth", 0.16);
-    this.noise(0.3, 0.15, 900, "lowpass");
+    this.tone(580, 240, 0.22, "triangle", 0.12);
   }
 
   magnetUp() {
-    this.tone(440, 880, 0.22, "triangle", 0.11);
-    this.tone(660, 1320, 0.22, "sine", 0.08, 0.05);
+    this.tone(440, 660, 0.18, "triangle", 0.1);
+    this.tone(660, 990, 0.2, "sine", 0.08, 0.05);
   }
 
   /** perfect release — pitch climbs with combo */

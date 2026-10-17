@@ -1,89 +1,97 @@
-# WEBBY! — 2D Web Swinging Physics Game
+# WEBBY! — rooftop parkour over an endless city
 
-2D-игра с физикой раскачивания на паутине: держи кнопку — паук цепляется за
-ближайший выступ, отпусти — летишь. React + TypeScript + Vite + Canvas 2D.
+A 2D web-swinging parkour game. You are a small spider-person in a woven suit,
+running the rooftops of an endless flat-vector city. There is **no ceiling**:
+the sky is open, and the only deadly surface is the street far below.
 
-## Запуск
+- **Auto-attack web.** In the air the silk snaps by itself to the nearest good
+  anchor — parapet corners, chimneys, water towers, masts, crane jibs, and
+  grabs on building facades. A dashed aim line shows where the next strand
+  will land.
+- **Hold to pump and reel.** Holding the line (SPACE / touch / WEB button)
+  pumps the swing and reels you *up* the strand — that is how you climb the
+  city. Release on the upswing for free flight; a release at the sweet spot is
+  a **PERFECT** release and grants a longer ballistic arc (never a speed boost).
+- **Mantle & wall-kick.** Reel a line all the way to a ledge and the runner
+  vaults over the edge onto the roof. Touching a facade lets you wall-kick
+  (jump) off it, so alleys are never dead ends.
+- **Grounded parkour.** Run with A/D, jump with W (coyote-time included),
+  spin in the air for flips and flow combos, glide with SHIFT (web holstered).
+- **Hazards.** Hard props (chimneys, water towers, masts, AC boxes, billboards,
+  vents, cranes, scaffolds) kill on a fast side hit and stumble you on a slow
+  one; patrol drones kill on contact; clotheslines, roof gardens and skylights
+  pass through. Soft props never kill.
+- **Districts & checkpoints.** Every district is exactly **250 m** and ends at
+  a wooden Waymark arch: pass through the visible hoop (no magnetism) to clear
+  the checkpoint. Eight themed districts cycle forever while the pace climbs:
+  Old Harbour, Brickline, Mosslight Row, Glassmarket, Amber Row, Pinewharf,
+  Cloudbreak Heights, Seabreeze Coast.
+- **Saving.** Progress lives in `localStorage` (`webby_save_v2`): unlocked
+  district, continue point, best distance, spools, flips, max altitude, run
+  counter, mute and seen hints. Dying restarts the current district; unlocks
+  stay.
+
+## Controls
+
+| Action | Keys | Touch |
+| --- | --- | --- |
+| Hold / release web | `SPACE`, `ENTER`, pointer on canvas | `WEB` button, tap canvas |
+| Run / spin | `A` `D` or `←` `→` | `SPIN ⟲ ⟳` buttons |
+| Jump / wall-kick | `W` `↑` `K` | `JUMP` button |
+| Glide | `SHIFT` `G` `↓` `S` | `GLIDE` button |
+| Pause / restart / mute | `P`/`ESC`, `R`, `M` | HUD buttons |
+
+## Run it
 
 ```bash
-npm install
-npm run dev      # http://localhost:5173
-npm run build    # single-file сборка в dist/index.html
+npm ci
+npm run dev        # vite dev server on :5173 (host 0.0.0.0, strict port)
+npm run build      # single-file bundle in dist/index.html
+npm run preview    # serves dist/ on :4173
 ```
 
-## Как играть
+## Tools & regression checks
 
-| Действие | Управление |
-| --- | --- |
-| Зарядить/держать паутину | `SPACE`, клик/тап по экрану |
-| Отпустить и полететь | отпустить кнопку (в верхней точке дуги — «PERFECT») |
-| Планирование веб-крыльями | `SHIFT`, `G`, `↓` или кнопка GLIDE |
-| Пауза / рестарт / звук | `P` / `R` / `M` |
-
-## Уровни и мир
-
-- Уровень = **250 метров**. В конце отрезка в асфальте открывается **люк-портал**:
-  нужно нырнуть в него. Промахнулся — следующий люк через 250 м, ничего не теряется.
-- После портала уровень повышается, а мир меняется: **неоновый город, джунгли,
-  подводная впадина, пустынный каньон, ледник, вулкан, орбита, неоновый квартал**
-  (40 уровней = 8 миров × 5 кругов).
-- **Тема одна на мир**: пять кругов одного мира идут в одной палитре (в меню это
-  пять одинаковых «отрезков» мира), поэтому смена картинки всегда = смена мира.
-- Прогресс сохраняется в `localStorage`; в меню можно выбрать любой открытый мир
-  и стартовать именно с него.
-- В каждом мире свои опасности и украшения: горящие крыши, рыбы, дроны-охотники,
-  сосульки, кактусы, кристаллы, водоросли, амбиент (пузыри, снег, листья, искры).
-
-## Воздушные потоки
-
-Потоки — это честное сопротивление: внутри зоны скорость тела подтягивается к
-вектору потока (в ядре за ~0.2 с), и воздух снимает часть веса. Потоков никогда
-не бывает больше одного в чанке и никогда в двух чанках подряд — они физически не
-могут наложиться друг на друга.
-
-## Страховки от «дальше не допрыгнуть»
-
-- Генератор гарантирует, что **до ближайшего выступа/паутинной капсулы всегда
-  ≤ 300 px** (в среднем ~60 px).
-- Паутинные капсулы (web pods) висят в разрывах, где нет крыш.
-- Автоприцел оценивает не только угол и длину, но и всю дугу: если маятник
-  цепляет шип, дрон или упирается в асфальт — вариант отбрасывается.
-- Страховка-подтяжка: паук сам подтягивает нить, когда низ дуги почти касается улицы.
-- Через каждые 250 м — восходящий поток, а в разрывах — ускоряющее кольцо.
-
-## Физика
-
-Ядро раскачивания не менялось ни на пиксель: констрейнт маятника, «пампинг»
-(`PUMP`, `REEL`) и спул верёвки идентичны первой версии — это проверяется
-автотестом `tools/ab.ts` (сравнение с движком из исходного коммита: нулевой дрейф).
-
-## Инструменты для отладки
+Headless tools live in `tools/` (their own `node_modules`, bundles are
+git-ignored). Rebuild bundles after editing tools or the game:
 
 ```bash
-for t in sim gaps mechanics ab lazy; do
-  npx esbuild tools/$t.ts --bundle --format=cjs --platform=node --outfile=tools/$t.cjs
+npm i --no-save --prefix tools jsdom @napi-rs/canvas esbuild   # once
+for t in sim gaps ab lazy bot; do
+  npx --prefix tools esbuild tools/$t.ts --bundle --format=cjs --platform=node --outfile=tools/$t.cjs
 done
-node tools/sim.cjs 1 2 3        # прогон бота по уровням (headless)
-node tools/gaps.cjs             # проверка достижимости выступов
-node tools/mechanics.cjs        # 18 проверок: потоки, огонь, люки, миры
-node tools/ab.cjs               # физика верёвки против исходной версии
-node tools/lazy.cjs 1           # зажать кнопку и никогда не отпускать
-```
-
-```bash
 for t in e2e perf spike; do
-  npx esbuild tools/$t.ts --bundle --format=esm --platform=node \
+  npx --prefix tools esbuild tools/$t.ts --bundle --format=esm --platform=node \
     --outfile=tools/$t.mjs --external:jsdom --external:@napi-rs/canvas
 done
-node tools/e2e.mjs              # UI целиком: 23 проверки (меню, HUD, пауза, мир)
-node tools/perf.mjs             # цена кадра (avg/p95/max) по уровням
-node tools/spike.mjs            # какой шаг рендера «залипает»
 ```
 
-`tools/` — headless-заглушки DOM и скриптовый «игрок», которым проверялась
-физика, достижимость выступов и прохождение порталов; в продакшн-сборку не входит.
-`tools/shot.ts` / `tools/spidershot.ts` рисуют кадры в PNG, `tools/e2e.ts` монтирует
-настоящее React-приложение в jsdom (оба варианта требуют
-`npm i @napi-rs/canvas jsdom` в отдельной папке и симлинк `tools/node_modules`).
-Фон (три слоя силуэтов города) запекается в offscreen-канвасы и переносится
-`drawImage`, поэтому на кадр остаётся ~50 вызовов вместо нескольких тысяч.
+| Command | What it checks |
+| --- | --- |
+| `npx tsc --noEmit` | typecheck of `src/` |
+| `npm run build` | production single-file build |
+| `node tools/sim.cjs SAFE [level]` | the built-in bot plays a district end to end (`TRACE_SIM=1` samples) |
+| `node tools/gaps.cjs` | every roof gap is jumpable/swingable |
+| `node tools/lazy.cjs 1` | world generation stays lazy & pruned |
+| `node tools/ab.cjs` | springy rope vs the frozen rigid baseline in `tools/orig/` |
+| `node tools/mechanics.cjs` | mechanics matrix (WIP: porting to the city API) |
+| `node tools/e2e.mjs` | UI flow in jsdom (WIP: porting to the city API) |
+| `node tools/render.mjs` | renders real PNG frames with `@napi-rs/canvas` for visual checks |
+
+`tools/orig/` is a frozen copy of the pre-spring engine used only as the A/B
+baseline — never edit it.
+
+## Architecture
+
+- `src/game/world.ts` — lazy city generator: buildings, roof segments, props,
+  anchors (ledge/prop/wall), drones, Waymark gates, hazards, raycasts.
+- `src/game/engine.ts` — physics & game loop: Verlet rope web, auto-anchor
+  search, mantle, wall-kick, glide, tricks, checkpoints, saving hooks.
+- `src/game/player.ts` — runner state, stance, rope nodes, attach/detach.
+- `src/game/renderer.ts` — flat-vector city painter: parallax skyline, street,
+  facades, roof decks, props, the articulated spider-person, web, particles.
+- `src/game/themes.ts` — eight district palettes + ambient flavour.
+- `src/game/save.ts` — `localStorage` save/migrate/clear.
+- `src/game/audio.ts`, `src/game/particles.ts` — SFX and particle pool.
+- `src/components/` — React shell: HUD, menu with district carousel, field
+  guide, pause/checkpoint/run-over panels.

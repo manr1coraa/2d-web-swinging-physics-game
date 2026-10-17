@@ -1,221 +1,267 @@
-/* Feature checks: air currents, burning roofs, pits, portals, themes. */
+/* Regression checks for the relaxed spring-web physics and endless trail. */
 import { installDom, rafQueue } from "./headless";
 const canvas = installDom();
 import { Game, LEVEL_METERS, MAX_LEVELS } from "../src/game/engine";
-import { World, themeForLevel, worldOfLevel, LEVELS_PER_WORLD, GATE_SPACING } from "../src/game/world";
+import { World, themeForLevel, worldOfLevel, LEVELS_PER_WORLD, GATE_SPACING, ROUTE_START_X, gateX, THEMES } from "../src/game/world";
+import { WEB_SEGMENTS } from "../src/game/player";
 
 let pass = 0;
 let fail = 0;
-const ok = (name: string, cond: boolean, extra = "") => {
-  if (cond) {
+const ok = (name: string, condition: boolean, extra = "") => {
+  if (condition) {
     pass++;
-    console.log(`  ✓ ${name} ${extra}`);
+    console.log(`  ✓ ${name}${extra ? ` — ${extra}` : ""}`);
   } else {
     fail++;
-    console.log(`  ✗ ${name} ${extra}`);
+    console.log(`  ✗ ${name}${extra ? ` — ${extra}` : ""}`);
   }
 };
 
 function newGame(level = 0) {
   rafQueue.length = 0;
-  const g = new Game(canvas as unknown as HTMLCanvasElement, () => {});
-  g.start(level);
-  (g as unknown as { last: number }).last = 0;
-  return g;
-}
-function frames(g: Game, n: number, t0 = { t: 0 }) {
-  for (let i = 0; i < n; i++) {
-    const cb = rafQueue.shift();
-    if (!cb) break;
-    t0.t += 1000 / 60;
-    cb(t0.t);
-  }
+  const game = new Game(canvas as unknown as HTMLCanvasElement, () => {});
+  game.start(level);
+  (game as unknown as { last: number }).last = 0;
+  return game;
 }
 
-/* ---------- 1. air currents actually push ---------- */
+function frame(game: Game, time: { value: number }) {
+  const callback = rafQueue.shift();
+  if (!callback) return false;
+  time.value += 1000 / 60;
+  callback(time.value);
+  return true;
+}
+
+function flattenWorld(game: Game) {
+  const world = game.world as unknown as {
+    ceilY: (...args: number[]) => number;
+    ceilSolid: (...args: number[]) => boolean;
+    lavaY: (...args: number[]) => number;
+    eachNear: (...args: unknown[]) => void;
+    raycast: (...args: unknown[]) => null;
+    solidAt: (...args: unknown[]) => boolean;
+    hazardNear: (...args: unknown[]) => boolean;
+  };
+  world.ceilY = () => -1000;
+  world.ceilSolid = () => false;
+  world.lavaY = () => 100000;
+  world.eachNear = () => {};
+  world.raycast = () => null;
+  world.solidAt = () => false;
+  world.hazardNear = () => false;
+}
+
+function chunks(world: World, count: number) {
+  for (let i = 0; i < count; i++) world.chunkAt(i * world.cw + 1);
+  return Array.from({ length: count }, (_, i) => world.chunks.get(i)!).filter(Boolean);
+}
+
+/* ---------- endless landscape progression ---------- */
 {
-  const g = newGame(0);
-  g.world.ensure(14000);
-  let wind: { x: number; y: number; vx: number; vy: number; strength: number } | null = null;
-  for (let x = 1000; x < 13000 && !wind; x += 240) {
-    g.world.eachNear(x, (o) => {
-      if (o.kind === "wind" && !wind) wind = o;
-    });
+  const distinct = new Set(Array.from({ length: THEMES.length * LEVELS_PER_WORLD }, (_, i) => themeForLevel(i)));
+  ok("the journey has eight distinct landscapes", THEMES.length === 8 && distinct.size === 8, [...distinct].join(", "));
+  ok("each landscape lasts five 250 m waymarks", Array.from({ length: 8 }, (_, world) => {
+    const start = world * LEVELS_PER_WORLD;
+    return Array.from({ length: LEVELS_PER_WORLD }, (_, step) => themeForLevel(start + step)).every((theme) => theme === themeForLevel(start));
+  }).every(Boolean));
+  ok("the eight-landscape route loops without a level cap", MAX_LEVELS === Number.POSITIVE_INFINITY && themeForLevel(40) === themeForLevel(0));
+  ok("every waymark stretch is 250 m", LEVEL_METERS === 250 && GATE_SPACING === 250 * 50);
+}
+
+/* ---------- route marker geometry and the 250 m objective ---------- */
+{
+  const world = new World(0);
+  const gx = gateX(0);
+  const gateChunk = world.chunkAt(gx);
+  ok("first waymark is exactly 250 m from the route start", gx - ROUTE_START_X === GATE_SPACING, `x=${gx}`);
+  ok("the approach stays open rather than cutting a hole in the hillside", !gateChunk.isGap && world.ceilSolid(gx));
+
+  const game = newGame(0);
+  const target = game.gateHole!;
+  ok("the active arch floats above the rolling ground", target.y < game.world.lavaY(target.x) - 100, `height=${(game.world.lavaY(target.x) - target.y).toFixed(0)}px`);
+  const player = game.player;
+  player.detach();
+  player.x = target.x - 120;
+  player.y = target.y;
+  player.vx = 250;
+  player.vy = 0;
+  (game as unknown as { collide: () => void }).collide();
+  ok("the waymark requires passing through its open center", game.state === "playing");
+
+  player.x = target.x - 70;
+  player.y = target.y;
+  (game as unknown as { collide: () => void }).collide();
+  ok("passing beside the arch does not count as a clear", game.state === "playing");
+
+  player.x = target.x - 40;
+  player.y = target.y;
+  (game as unknown as { collide: () => void }).collide();
+  ok("passing through the arch starts a calm transition", game.state === "levelup", `state=${game.state}`);
+  ok("a completed stretch records exactly 250 m", game.distM === LEVEL_METERS, `distance=${game.distM}m`);
+
+  game.coins = 7;
+  game.tricks = 2;
+  const time = { value: 0 };
+  for (let i = 0; i < 110; i++) frame(game, time);
+  ok("the next stretch opens and unlocks progression", game.state === "playing" && game.level === 1 && game.unlocked >= 1, `level=${game.level + 1}`);
+  ok("the next landscape follows the first waymark", game.theme === themeForLevel(1), `theme=${game.theme}`);
+  ok("collected seeds and earned turns carry between waymarks", game.coins === 7 && game.tricks === 2);
+  const journeyMeters = (game as unknown as { journeyMeters: number }).journeyMeters;
+  const nextWaymark = journeyMeters + Math.round(((game.gateHole?.x ?? ROUTE_START_X) - ROUTE_START_X) / 50);
+  ok("the next target is 250 m farther on the cumulative journey", game.gateHole?.x === gateX(0) && journeyMeters === 250 && nextWaymark === 500, `distance=${game.distM}m next=${nextWaymark}m`);
+
+  const collision = (game as unknown as { collide: () => void }).collide;
+  for (let waymark = 1; waymark < LEVELS_PER_WORLD; waymark++) {
+    const next = game.gateHole!;
+    game.player.detach();
+    game.player.x = next.x - 40;
+    game.player.y = next.y;
+    game.player.vx = 250;
+    game.player.vy = 0;
+    collision.call(game);
+    for (let i = 0; i < 110; i++) frame(game, time);
   }
-  ok("world contains air-current zones", !!wind);
-  if (wind) {
-    const w = wind as { x: number; y: number; w: number; h: number; vx: number; vy: number; strength: number };
-    const p = g.player;
-    // pin the spider in the core of the current and watch what the air does
-    p.attached = false;
-    p.vx = 0;
-    p.vy = 0;
-    const t0 = { t: 0 };
-    const before = Math.hypot(w.vx, w.vy);
-    let gain = 0;
-    let vyMid = 0;
-    for (let f = 0; f < 24; f++) {
-      p.x = w.x;
-      p.y = w.y;
-      frames(g, 1, t0);
-      gain = Math.max(gain, g.windGain);
-      if (f === 11) vyMid = p.vy;
-      if (g.state !== "playing") break;
+  const totalMeters = (game as unknown as { journeyMeters: number }).journeyMeters;
+  ok("five waymarks open the next landscape without a level cap", game.level === LEVELS_PER_WORLD && game.theme === themeForLevel(LEVELS_PER_WORLD) && game.unlocked >= LEVELS_PER_WORLD, `next=${game.theme} distance=${totalMeters}m`);
+  ok("the cumulative journey advances in exact 250 m steps", totalMeters === LEVELS_PER_WORLD * LEVEL_METERS);
+  game.dispose();
+}
+
+/* ---------- quiet, coherent procedural generation ---------- */
+{
+  const world = new World(0);
+  const generated = chunks(world, 180);
+  const earlyStal = generated.slice(0, 10).some((chunk) => chunk.objs.some((object) => object.kind === "stal"));
+  const stalCounts = generated.slice(10).map((chunk) => chunk.objs.filter((object) => object.kind === "stal").length);
+  const stalRate = stalCounts.filter((count) => count > 0).length / Math.max(1, stalCounts.length);
+  ok("hanging hazards are absent for the first ten chunks", !earlyStal);
+  ok("later hanging hazards stay rare and capped at one per chunk", Math.max(...stalCounts) <= 1 && stalRate < 0.35, `chunk rate=${(stalRate * 100).toFixed(0)}%`);
+
+  const spireCounts = generated.map((chunk) => chunk.objs.filter((object) => object.kind === "spire").length);
+  const spireRate = spireCounts.filter((count) => count > 0).length / generated.length;
+  ok("stone spires are also sparse and absent from the opening", spireCounts.slice(0, 10).every((count) => count === 0) && Math.max(...spireCounts) <= 1 && spireRate < 0.12, `chunk rate=${(spireRate * 100).toFixed(0)}%`);
+
+  const kinds = new Set(generated.flatMap((chunk) => chunk.objs.map((object) => object.kind)));
+  ok("the trail avoids speed rings and old lethal city clutter", !kinds.has("boost") && !kinds.has("saw") && !kinds.has("drone") && !kinds.has("fire"), [...kinds].join(", "));
+
+  let windViolations = 0;
+  for (let i = 0; i < generated.length; i++) {
+    const count = generated[i].objs.filter((object) => object.kind === "wind").length;
+    const next = generated[i + 1]?.objs.filter((object) => object.kind === "wind").length ?? 0;
+    if (count > 1 || (count > 0 && next > 0)) windViolations++;
+  }
+  ok("quiet air currents never overlap or fill consecutive chunks", windViolations === 0, `violations=${windViolations}`);
+
+  let minGround = Number.POSITIVE_INFINITY;
+  let maxGround = Number.NEGATIVE_INFINITY;
+  let maxStep = 0;
+  for (let x = 0; x <= 16000; x += 12) {
+    const y = world.lavaY(x);
+    minGround = Math.min(minGround, y);
+    maxGround = Math.max(maxGround, y);
+    if (x > 0) maxStep = Math.max(maxStep, Math.abs(y - world.lavaY(x - 12)));
+  }
+  ok("the hillside varies gently without deep, abrupt pits", maxGround - minGround < 320 && maxStep < 18, `range=${(maxGround - minGround).toFixed(0)}px max step=${maxStep.toFixed(1)}px`);
+}
+
+/* ---------- flexible tether behavior ---------- */
+{
+  const game = newGame(0);
+  flattenWorld(game);
+  const player = game.player;
+  player.detach();
+  player.x = 600;
+  player.y = 300;
+  player.vx = 520;
+  player.vy = -120;
+  player.attach(700, 60);
+  player.rope = 220;
+  player.rope0 = 220;
+  game.holdWeb = true;
+
+  let maxRatio = 0;
+  for (let i = 0; i < 600; i++) {
+    (game as unknown as { step: (h: number) => void }).step(1 / 240);
+    const chord = Math.hypot(player.x - player.ax, player.y - player.ay);
+    maxRatio = Math.max(maxRatio, chord / Math.max(1, player.rope));
+  }
+  const nodes = player.webNodes;
+  const endpointsMatch =
+    nodes.length === WEB_SEGMENTS + 1 &&
+    Math.hypot(nodes[0].x - player.ax, nodes[0].y - player.ay) < 0.01 &&
+    Math.hypot(nodes[nodes.length - 1].x - player.x, nodes[nodes.length - 1].y - player.y) < 0.01;
+  const finiteNodes = nodes.every((node) => [node.x, node.y, node.px, node.py].every(Number.isFinite));
+  ok("the spring web gives a little, bounded travel", maxRatio > 1.02 && maxRatio <= 1.18, `max length/rest=${maxRatio.toFixed(3)}`);
+  ok("the 12 silk segments stay ordered from anchor to spider", endpointsMatch && finiteNodes, `nodes=${nodes.length}`);
+  const before = [player.vx, player.vy];
+  player.detach();
+  ok("releasing the web preserves velocity instead of adding a launch", !player.attached && player.webNodes.length === 0 && player.vx === before[0] && player.vy === before[1]);
+  game.dispose();
+}
+
+/* ---------- trick direction, spin momentum, and score counting ---------- */
+{
+  const game = newGame(0);
+  const player = game.player;
+  player.detach();
+  player.vx = 260;
+  player.vy = 0;
+  player.rotation = 0;
+  player.lastFlipAngle = 0;
+  player.angularVelocity = 0;
+  const engine = game as unknown as { trickDir: -1 | 0 | 1; stepRotation: (h: number) => void };
+  engine.trickDir = 1;
+  for (let i = 0; i < 120; i++) engine.stepRotation(1 / 60);
+  const positiveRotation = player.rotation;
+  const turns = game.tricks;
+  const velocityBeforeRelease = player.angularVelocity;
+  engine.trickDir = 0;
+  engine.stepRotation(1 / 60);
+  ok("right tuck rotates in its chosen direction and completes a real turn", positiveRotation > 2 * Math.PI && turns >= 1, `angle=${positiveRotation.toFixed(1)} rad turns=${turns}`);
+  ok("spin carries momentum briefly after the input is released", player.angularVelocity > 0 && player.angularVelocity < velocityBeforeRelease);
+  game.dispose();
+
+  const reverse = newGame(0);
+  const p = reverse.player;
+  p.detach();
+  p.vx = 260;
+  p.vy = 0;
+  p.rotation = 0;
+  p.lastFlipAngle = 0;
+  p.angularVelocity = 0;
+  const reverseEngine = reverse as unknown as { trickDir: -1 | 0 | 1; stepRotation: (h: number) => void };
+  reverseEngine.trickDir = -1;
+  for (let i = 0; i < 120; i++) reverseEngine.stepRotation(1 / 60);
+  ok("left tuck follows the opposite rotation direction", p.rotation < -2 * Math.PI && reverse.tricks >= 1, `angle=${p.rotation.toFixed(1)} rad turns=${reverse.tricks}`);
+  reverse.dispose();
+}
+
+/* ---------- peaceful wildlife ---------- */
+{
+  const game = newGame(10);
+  for (let i = 0; i < 180; i++) game.world.chunkAt(i * game.world.cw + 1);
+  let fish: { x: number; y: number } | null = null;
+  for (const chunk of game.world.chunks.values()) {
+    const found = chunk.objs.find((object) => object.kind === "fish");
+    if (found?.kind === "fish") {
+      fish = found;
+      break;
     }
-    const after = Math.hypot(p.vx - w.vx, p.vy - w.vy);
-    const aligned = (p.vx * w.vx + p.vy * w.vy) / (Math.hypot(p.vx, p.vy) * Math.hypot(w.vx, w.vy) || 1);
-    ok(
-      "a current drags the player into its flow",
-      after < before * 0.5 && aligned > 0.85 && gain > 0.6,
-      `Δv=${before.toFixed(0)}→${after.toFixed(0)} align=${aligned.toFixed(2)} coreGain=${gain.toFixed(2)}`,
-    );
-    ok(
-      "a current of rising air carries the spider up",
-      p.vy < 0 && p.vy < vyMid,
-      `vy ${vyMid.toFixed(0)} → ${p.vy.toFixed(0)} over 0.4s (flow vy=${w.vy.toFixed(0)})`,
-    );
-    ok(
-      "currents never overlap (one per chunk, never back-to-back)",
-      (() => {
-        let overlapping = 0;
-        for (const [i, c] of g.world.chunks) {
-          const here = c.objs.filter((o) => o.kind === "wind").length;
-          const next = g.world.chunks.get(i + 1)?.objs.filter((o) => o.kind === "wind").length ?? 0;
-          if (here > 1 || (here > 0 && next > 0)) overlapping++;
-        }
-        return overlapping === 0;
-      })(),
-    );
   }
-  g.dispose();
-}
-
-/* ---------- 2. burning roofs kill ---------- */
-{
-  const g = newGame(25); // volcano rims live in world 6, so flames must show up here
-  g.world.ensure(14000);
-  let fire: { x: number; y: number; w: number; h: number } | null = null;
-  for (let x = 0; x < 14000 && !fire; x += 240) {
-    g.world.eachNear(x, (o) => {
-      if (o.kind === "fire" && !fire) fire = o;
-    });
+  ok("tidal cove includes drifting wildlife", !!fish);
+  if (fish) {
+    for (const chunk of game.world.chunks.values()) chunk.objs = chunk.objs.filter((object) => object.kind === "fish");
+    game.player.detach();
+    game.player.x = fish.x;
+    game.player.y = fish.y;
+    game.player.vx = 0;
+    game.player.vy = 0;
+    (game as unknown as { graceT: number }).graceT = 0;
+    (game as unknown as { collide: () => void }).collide();
+    ok("fish are safe to pass through", game.state === "playing" && game.cause === "");
   }
-  ok("world contains burning roof segments", !!fire);
-  if (fire) {
-    const f = fire as { x: number; y: number; w: number; h: number };
-    const p = g.player;
-    p.attached = false;
-    p.x = f.x;
-    p.y = f.y + f.h * 0.5;
-    p.vx = 0;
-    p.vy = 0;
-    (g as unknown as { graceT: number }).graceT = 0;
-    frames(g, 3, { t: 0 });
-    ok("flying into flames is fatal", g.cause === "fire" || g.state === "dying", `cause=${g.cause} state=${g.state}`);
-  }
-  g.dispose();
-}
-
-/* ---------- 3. the street has real pits ---------- */
-{
-  const w = new World(0);
-  let min = 1e9;
-  let max = -1e9;
-  for (let x = 0; x < 14000; x += 25) {
-    const y = w.lavaY(x);
-    min = Math.min(min, y);
-    max = Math.max(max, y);
-  }
-  ok("street surface has dips (pits)", max - min > 260, `Δy=${(max - min).toFixed(0)}px (the pits are deeper than the noise)`);
-}
-
-/* ---------- 4. the floor gate opens the next level ---------- */
-{
-  const g = newGame(0);
-  g.world.ensure(GATE_SPACING + 600);
-  const p = g.player;
-  p.attached = false;
-  p.x = GATE_SPACING;
-  p.y = g.world.lavaY(GATE_SPACING) - 10;
-  p.vx = 300;
-  p.vy = 200;
-  frames(g, 4, { t: 0 });
-  ok("diving into the hole clears the level", g.state === "levelup", `state=${g.state}`);
-  const t0 = { t: 0 };
-  frames(g, 200, t0);
-  ok(
-    "level advances automatically and unlocks the next world",
-    g.level === 1 && g.unlocked >= 1,
-    `level=${g.level + 1} unlocked=${g.unlocked + 1} theme=${g.theme}`,
-  );
-  ok("coins carry over into the new level", typeof g.coins === "number");
-  g.dispose();
-}
-
-/* ---------- 5. missing the gate is survivable ---------- */
-{
-  const g = newGame(0);
-  g.world.ensure(GATE_SPACING + 2000);
-  const p = g.player;
-  p.attached = false;
-  // already past the hole, high above the street, still flying
-  p.x = GATE_SPACING + 260;
-  p.y = g.world.ceilY(p.x) + 150;
-  p.vx = 900;
-  p.vy = -40;
-  frames(g, 4, { t: 0 });
-  ok(
-    "flying over the gate marks it as missed",
-    g.missedGate,
-    `x=${p.x.toFixed(0)} missed=${g.missedGate} state=${g.state}${g.cause ? "/" + g.cause : ""}`,
-  );
-  ok("a follow-up gate is queued", (g.gateHole?.x ?? 0) > GATE_SPACING, `next=${(g.gateHole?.x ?? 0).toFixed(0)}`);
-  // and the run continues afterwards
-  frames(g, 30, { t: 0 });
-  ok("a missed gate does not end the run", g.state === "playing" || g.state === "dying", `state=${g.state}${g.cause ? "/" + g.cause : ""}`);
-  g.dispose();
-}
-
-/* ---------- 6. reachability + themes ---------- */
-{
-  const w = new World(0);
-  w.ensure(14000);
-  let worst = 0;
-  for (let x = 0; x <= 12800; x += 40) {
-    if (w.ceilSolid(x)) continue;
-    let d = 9999;
-    for (let k = 20; k <= 900; k += 20) {
-      let hit = false;
-      w.eachNear(x - k, (o) => {
-        if ((o.kind === "plat" || o.kind === "spire") && Math.abs(o.x - (x - k)) < o.w / 2 + 10) hit = true;
-      });
-      w.eachNear(x + k, (o) => {
-        if ((o.kind === "plat" || o.kind === "spire") && Math.abs(o.x - (x + k)) < o.w / 2 + 10) hit = true;
-      });
-      if (hit) {
-        d = Math.min(d, k);
-        break;
-      }
-      if (w.ceilSolid(x - k) || w.ceilSolid(x + k)) {
-        d = Math.min(d, k);
-        break;
-      }
-    }
-    worst = Math.max(worst, d);
-  }
-  ok("an anchor is never far away (≤300 px even mid-gap)", worst <= 300, `worst=${worst}px`);
-  ok("40 levels are configured", MAX_LEVELS === 40, `levels=${MAX_LEVELS}`);
-  const themes = new Set(Array.from({ length: MAX_LEVELS }, (_, i) => themeForLevel(i)));
-  ok("8 distinct worlds cycle through the levels", themes.size === 8, [...themes].join(", "));
-  ok(
-    "each world keeps one theme for all five stretches",
-    themeForLevel(25) === themeForLevel(25 + LEVELS_PER_WORLD - 1) &&
-      themeForLevel(25) !== themeForLevel(25 - 1) &&
-      worldOfLevel(25) === 5 &&
-      worldOfLevel(24) === 4,
-    `w5=${themeForLevel(25)} w6=${themeForLevel(30)}`,
-  );
-  ok("one level is 250 m", LEVEL_METERS === 250);
+  game.dispose();
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
